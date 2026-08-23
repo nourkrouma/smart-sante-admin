@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidOrderCreate() {
+      return isOwner(request.resource.data.userId)
+        && request.resource.data.status == 'ordered'
+        && request.resource.data.keys().hasAll([
+          'userId',
+          'items',
+          'subtotal',
+          'status',
+          'fullName',
+          'phone',
+          'address'
+        ]);
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    function isValidOrderStatus(status) {
+      return status in ['ordered', 'confirmed', 'delivery', 'delivered', 'cancelled'];
+    }
+
+    function isStatusOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt'])
+        && isValidOrderStatus(request.resource.data.status);
+    }
+
+    match /orders/{orderId} {
+      allow create: if isValidOrderCreate();
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow update: if isAdmin() && isStatusOnlyUpdate();
+      allow delete: if false;
+    }
+  }
+}
