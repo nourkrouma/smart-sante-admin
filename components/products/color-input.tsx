@@ -78,8 +78,10 @@ export function ColorInput({
     const input = colorPickerRef.current;
     if (!input) return;
 
-    function previewHex() {
-      const hex = normalizeHexColor(input.value);
+    function previewHex(event: Event) {
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLInputElement)) return;
+      const hex = normalizeHexColor(target.value);
       if (hex) setPendingHex(hex);
     }
 
