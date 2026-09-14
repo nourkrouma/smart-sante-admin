@@ -4,10 +4,10 @@ import {
   type User,
 } from "firebase/auth";
 import { getFirebaseAuth } from "@/lib/firebase";
-import { userHasAdminClaim } from "@/lib/admin";
+import { ADMIN_EMAIL, userHasAdminClaim } from "@/lib/admin";
 
 const NOT_ADMIN_MESSAGE =
-  "Ce compte n’est pas administrateur. Connectez-vous avec admin@smartsante.com une fois le droit admin attribué.";
+  `Ce compte n’est pas administrateur. Connectez-vous avec ${ADMIN_EMAIL} une fois le droit admin attribué.`;
 
 export async function signInAdmin(
   email: string,

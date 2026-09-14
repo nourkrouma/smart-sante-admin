@@ -14,6 +14,16 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isNonNegativeNumber(value) {
+      return value is number && value >= 0;
+    }
+
+    function isPointsOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['points', 'updatedAt'])
+        && isNonNegativeNumber(request.resource.data.points);
+    }
+
     function isValidOrderCreate() {
       return isOwner(request.resource.data.userId)
         && request.resource.data.status == 'ordered'
@@ -28,15 +38,6 @@ service cloud.firestore {
         ]);
     }
 
-    match /products/{productId} {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /users/{userId} {
-      allow read, write: if isOwner(userId);
-    }
-
     function isValidOrderStatus(status) {
       return status in ['ordered', 'confirmed', 'delivery', 'delivered', 'cancelled'];
     }
@@ -47,10 +48,188 @@ service cloud.firestore {
         && isValidOrderStatus(request.resource.data.status);
     }
 
+    function isOwnerCancellation() {
+      return isOwner(resource.data.userId)
+        && resource.data.status in ['ordered', 'confirmed']
+        && request.resource.data.status == 'cancelled'
+        && isStatusOnlyUpdate();
+    }
+
+    function isValidOnboardingQuestion() {
+      let data = request.resource.data;
+      return data.id == questionId
+        && data.title is string
+        && data.title.size() > 0
+        && data.type in ['single', 'multiple', 'text']
+        && data.order is int
+        && data.order >= 0
+        && data.required is bool
+        && data.options is list
+        && (
+          (data.type == 'text' && data.options.size() == 0)
+          || (
+            (data.type == 'single' || data.type == 'multiple')
+            && data.options.size() >= 2
+          )
+        );
+    }
+
+    function authEmail() {
+      return request.auth.token.email is string
+        ? request.auth.token.email.lower()
+        : '';
+    }
+
+    function isValidFriendshipCreate() {
+      let data = request.resource.data;
+      return data.requesterUid == request.auth.uid
+        && data.addresseeUid is string
+        && data.addresseeUid != request.auth.uid
+        && data.requesterEmail is string
+        && data.addresseeEmail is string
+        && data.status == 'pending';
+    }
+
+    function isFriendshipParty() {
+      return isSignedIn()
+        && (request.auth.uid == resource.data.requesterUid
+          || request.auth.uid == resource.data.addresseeUid);
+    }
+
+    function isValidFriendshipResponse() {
+      return request.auth.uid == resource.data.addresseeUid
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['accepted', 'declined']
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'respondedAt']);
+    }
+
+    function isValidPointEventCreate() {
+      let data = request.resource.data;
+      return data.uid is string
+        && data.type in ['order_placed', 'order_delivered', 'referral']
+        && data.sourceId is string
+        && data.sourceId.size() > 0
+        && data.amount is number
+        && data.amount > 0
+        && eventId == data.type + '_' + data.sourceId;
+    }
+
+    function ownsOrder(orderId) {
+      return exists(/databases/$(database)/documents/orders/$(orderId))
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.userId
+          == request.auth.uid;
+    }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId)
+        && (!('points' in request.resource.data)
+          || request.resource.data.points == 0);
+      allow update: if (isOwner(userId)
+          && (!('points' in request.resource.data)
+            || isNonNegativeNumber(request.resource.data.points)))
+        || (isAdmin() && isPointsOnlyUpdate());
+      allow delete: if false;
+    }
+
+    match /publicProfiles/{uid} {
+      allow read: if isSignedIn();
+      allow create: if (isOwner(uid)
+          && request.resource.data.points == 0
+          && request.resource.data.displayName is string)
+        || (isAdmin() && isNonNegativeNumber(request.resource.data.points));
+      allow update: if (isOwner(uid)
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['displayName', 'points', 'updatedAt'])
+          && isNonNegativeNumber(request.resource.data.points))
+        || (isAdmin() && isPointsOnlyUpdate());
+      allow delete: if false;
+    }
+
+    match /emailIndex/{normalizedEmail} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && authEmail() == normalizedEmail
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid']);
+      allow update, delete: if false;
+    }
+
+    match /friendships/{friendshipId} {
+      allow create: if isSignedIn() && isValidFriendshipCreate();
+      allow read: if isFriendshipParty();
+      allow update: if isValidFriendshipResponse();
+      allow delete: if false;
+    }
+
+    match /pointEvents/{eventId} {
+      allow get: if isSignedIn()
+        && (resource == null
+          || resource.data.uid == request.auth.uid
+          || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidPointEventCreate()
+        && (
+          (isOwner(request.resource.data.uid)
+            && request.resource.data.type == 'order_placed'
+            && request.resource.data.amount == 1
+            && ownsOrder(request.resource.data.sourceId))
+          || (isOwner(request.resource.data.uid)
+            && request.resource.data.type == 'referral'
+            && request.resource.data.amount == 10
+            && exists(/databases/$(database)/documents/referral_events/$(request.resource.data.sourceId))
+            && get(/databases/$(database)/documents/referral_events/$(request.resource.data.sourceId)).data.referrerUid
+              == request.auth.uid)
+          || (isAdmin()
+            && request.resource.data.type == 'order_delivered'
+            && request.resource.data.amount == 10)
+        );
+      allow update, delete: if false;
+    }
+
+    match /onboardingQuestions/{questionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() && isValidOnboardingQuestion();
+      allow delete: if isAdmin();
+    }
+
+    match /referral_codes/{code} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid']);
+      allow update, delete: if false;
+    }
+
+    match /referral_events/{refereeUid} {
+      allow create: if isSignedIn()
+        && request.auth.uid == refereeUid
+        && request.resource.data.refereeUid == refereeUid
+        && request.resource.data.referrerUid is string
+        && request.resource.data.referrerUid != request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'referrerUid',
+          'refereeUid',
+          'createdAt'
+        ]);
+      allow read: if isSignedIn()
+        && (request.auth.uid == refereeUid
+          || request.auth.uid == resource.data.referrerUid
+          || isAdmin());
+      allow update, delete: if false;
+    }
+
     match /orders/{orderId} {
       allow create: if isValidOrderCreate();
       allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow update: if isAdmin() && isStatusOnlyUpdate();
+      allow update: if (isAdmin() && isStatusOnlyUpdate())
+        || isOwnerCancellation();
       allow delete: if false;
     }
   }

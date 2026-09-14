@@ -2,13 +2,32 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ClipboardList, LogOut, Package } from "lucide-react";
+import {
+  Bell,
+  ClipboardList,
+  ListChecks,
+  LogOut,
+  Package,
+  Users,
+} from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 
 const nav = [
   { href: "/products", label: "Produits", icon: Package },
   { href: "/commandes", label: "Commandes", icon: ClipboardList },
+  { href: "/onboarding", label: "Onboarding", icon: ListChecks },
+  { href: "/users", label: "Utilisateurs", icon: Users },
+  { href: "/notifications", label: "Notifications", icon: Bell },
 ];
+
+function navClassName(active: boolean, compact = false) {
+  const padding = compact ? "px-3 py-2" : "px-3 py-2.5";
+  return `flex shrink-0 items-center gap-2 rounded-md ${padding} text-sm font-medium whitespace-nowrap transition-colors ${
+    active
+      ? "bg-brand text-white"
+      : "text-white/70 hover:bg-white/10 hover:text-white"
+  }`;
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -27,51 +46,37 @@ export function Sidebar() {
           <p className="text-lg font-semibold tracking-tight">Smart Santé</p>
           <p className="mt-0.5 text-xs text-white/55">Administration</p>
         </div>
-        <div className="flex items-center gap-1 md:hidden">
-          <nav className="flex gap-1">
-            {nav.map(({ href, label, icon: Icon }) => {
-              const active =
-                pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                    active
-                      ? "bg-brand text-white"
-                      : "text-white/70 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  <Icon size={18} strokeWidth={1.75} />
-                  {label}
-                </Link>
-              );
-            })}
-          </nav>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="rounded-md p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-            aria-label="Déconnexion"
-          >
-            <LogOut size={18} strokeWidth={1.75} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="rounded-md p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+          aria-label="Déconnexion"
+        >
+          <LogOut size={18} strokeWidth={1.75} />
+        </button>
       </div>
 
-      <nav className="hidden flex-1 flex-col gap-1 p-3 md:flex">
+      <nav className="flex gap-1 overflow-x-auto border-b border-white/10 px-3 py-2 md:hidden">
         {nav.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link
               key={href}
               href={href}
-              className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
-                active
-                  ? "bg-brand text-white"
-                  : "text-white/70 hover:bg-white/10 hover:text-white"
-              }`}
+              className={navClassName(active, true)}
             >
+              <Icon size={18} strokeWidth={1.75} />
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <nav className="hidden flex-1 flex-col gap-1 p-3 md:flex">
+        {nav.map(({ href, label, icon: Icon }) => {
+          const active = pathname === href || pathname.startsWith(`${href}/`);
+          return (
+            <Link key={href} href={href} className={navClassName(active)}>
               <Icon size={18} strokeWidth={1.75} />
               {label}
             </Link>

@@ -1,65 +1,52 @@
 "use client";
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
-import { createProduct, updateProduct } from "@/lib/products";
-import type { Product, ProductCategory, ProductColor } from "@/types/product";
-import {
-  DEFAULT_PRODUCT_CATEGORY,
-  PRODUCT_CATEGORIES,
-  PRODUCT_CATEGORY_LABELS,
-} from "@/types/product";
 import { TagInput } from "@/components/products/tag-input";
-import { ColorInput } from "@/components/products/color-input";
+import {
+  createOnboardingQuestion,
+  updateOnboardingQuestion,
+} from "@/lib/onboarding";
+import {
+  ONBOARDING_QUESTION_TYPES,
+  ONBOARDING_QUESTION_TYPE_LABELS,
+  type OnboardingQuestion,
+  type OnboardingQuestionType,
+} from "@/types/onboarding";
 
-type ProductFormDialogProps = {
+type QuestionFormDialogProps = {
   open: boolean;
-  product: Product | null;
+  question: OnboardingQuestion | null;
+  nextOrder: number;
   onClose: () => void;
+  onSaved: (question: OnboardingQuestion) => void;
 };
 
-function imagesToText(images: string[]): string {
-  return images.join("\n");
-}
-
-function textToImages(text: string): string[] {
-  return text
-    .split(/\n|,/)
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
-export function ProductFormDialog({
+export function QuestionFormDialog({
   open,
-  product,
+  question,
+  nextOrder,
   onClose,
-}: ProductFormDialogProps) {
-  const router = useRouter();
-  const isEdit = product !== null;
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
-  const [category, setCategory] = useState<ProductCategory>(
-    DEFAULT_PRODUCT_CATEGORY,
-  );
-  const [imagesText, setImagesText] = useState("");
-  const [sizes, setSizes] = useState<string[]>([]);
-  const [colors, setColors] = useState<ProductColor[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
+  onSaved,
+}: QuestionFormDialogProps) {
+  const isEdit = question !== null;
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState<OnboardingQuestionType>("single");
+  const [options, setOptions] = useState<string[]>([]);
+  const [order, setOrder] = useState("1");
+  const [required, setRequired] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
-    setName(product?.name ?? "");
-    setPrice(product ? String(product.price) : "");
-    setCategory(product?.category ?? DEFAULT_PRODUCT_CATEGORY);
-    setImagesText(product ? imagesToText(product.images) : "");
-    setSizes(product?.sizes ?? []);
-    setColors(product?.colors ?? []);
-    setTags(product?.tags ?? []);
+    setTitle(question?.title ?? "");
+    setType(question?.type ?? "single");
+    setOptions(question?.options ?? []);
+    setOrder(String(question?.order ?? nextOrder));
+    setRequired(question?.required ?? true);
     setError(null);
-  }, [open, product]);
+  }, [open, question, nextOrder]);
 
   useEffect(() => {
     if (!open) return;
@@ -82,33 +69,32 @@ export function ProductFormDialog({
     event.preventDefault();
     setError(null);
 
-    const parsedPrice = Number.parseFloat(price);
+    const parsedOrder = Number.parseInt(order, 10);
     const input = {
-      name,
-      price: parsedPrice,
-      images: textToImages(imagesText),
-      sizes,
-      colors,
-      tags,
-      category,
+      title,
+      type,
+      options: type === "text" ? [] : options,
+      order: Number.isFinite(parsedOrder) ? parsedOrder : Number.NaN,
+      required,
     };
 
     startTransition(async () => {
       try {
-        if (isEdit) {
-          await updateProduct(product.id, input);
-        } else {
-          await createProduct(input);
-        }
-        router.refresh();
+        const saved = isEdit
+          ? await updateOnboardingQuestion(question.id, input)
+          : await createOnboardingQuestion(input);
+        onSaved({
+          ...saved,
+          createdAt: question?.createdAt ?? saved.createdAt,
+        });
         onClose();
       } catch (mutationError) {
         setError(
           mutationError instanceof Error
             ? mutationError.message
             : isEdit
-              ? "Impossible de modifier le produit"
-              : "Impossible de créer le produit",
+              ? "Impossible de modifier la question"
+              : "Impossible de créer la question",
         );
       }
     });
@@ -128,15 +114,15 @@ export function ProductFormDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="product-form-title"
+        aria-labelledby="question-form-title"
         className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-surface shadow-xl"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface px-5 py-4">
           <h2
-            id="product-form-title"
+            id="question-form-title"
             className="text-base font-semibold text-foreground"
           >
-            {isEdit ? "Modifier le produit" : "Ajouter un produit"}
+            {isEdit ? "Modifier la question" : "Ajouter une question"}
           </h2>
           <button
             type="button"
@@ -152,95 +138,75 @@ export function ProductFormDialog({
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-5">
           <label className="block space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Nom
+              Question
             </span>
             <input
               type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
               required
               disabled={isPending}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              placeholder="Nom du produit"
+              placeholder="Texte de la question"
             />
           </label>
 
           <label className="block space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Prix
-            </span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
-              required
-              disabled={isPending}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              placeholder="0"
-            />
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Catégorie
+              Type
             </span>
             <select
-              value={category}
+              value={type}
               onChange={(event) =>
-                setCategory(event.target.value as ProductCategory)
+                setType(event.target.value as OnboardingQuestionType)
               }
               required
               disabled={isPending}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
             >
-              {PRODUCT_CATEGORIES.map((value) => (
+              {ONBOARDING_QUESTION_TYPES.map((value) => (
                 <option key={value} value={value}>
-                  {PRODUCT_CATEGORY_LABELS[value]}
+                  {ONBOARDING_QUESTION_TYPE_LABELS[value]}
                 </option>
               ))}
             </select>
           </label>
 
-          <TagInput
-            label="Tailles"
-            values={sizes}
-            onChange={setSizes}
-            placeholder="ex. M, L, XL"
-            disabled={isPending}
-          />
-
-          <ColorInput
-            label="Couleurs"
-            values={colors}
-            onChange={setColors}
-            disabled={isPending}
-          />
-
-          <TagInput
-            label="Tags"
-            values={tags}
-            onChange={setTags}
-            placeholder="ex. confort, sport, étanche"
-            disabled={isPending}
-          />
+          {type !== "text" ? (
+            <TagInput
+              label="Options"
+              values={options}
+              onChange={setOptions}
+              placeholder="Ajouter une option"
+              disabled={isPending}
+            />
+          ) : null}
 
           <label className="block space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Images
+              Ordre
             </span>
-            <textarea
-              value={imagesText}
-              onChange={(event) => setImagesText(event.target.value)}
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={order}
+              onChange={(event) => setOrder(event.target.value)}
+              required
               disabled={isPending}
-              rows={4}
-              className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              placeholder={"Une URL d’image par ligne"}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
             />
-            <span className="block text-xs text-muted">
-              Saisissez une URL d’image par ligne
-            </span>
+          </label>
+
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={required}
+              onChange={(event) => setRequired(event.target.checked)}
+              disabled={isPending}
+              className="size-4 rounded border-border text-brand accent-brand"
+            />
+            Réponse obligatoire
           </label>
 
           {error ? (
@@ -269,7 +235,7 @@ export function ProductFormDialog({
                   : "Création…"
                 : isEdit
                   ? "Enregistrer"
-                  : "Créer le produit"}
+                  : "Créer la question"}
             </button>
           </div>
         </form>

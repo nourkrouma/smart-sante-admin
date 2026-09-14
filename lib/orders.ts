@@ -1,10 +1,13 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
+  increment,
   serverTimestamp,
-  updateDoc,
+  setDoc,
   Timestamp,
+  updateDoc,
   type Firestore,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
@@ -18,6 +21,7 @@ import {
 
 const ORDERS_COLLECTION = "orders";
 const COMMANDES_COLLECTION = "commandes";
+const DELIVERED_POINTS = 10;
 
 function parseString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -184,10 +188,55 @@ export async function updateOrderStatus(
     throw new Error("Statut de commande invalide");
   }
 
-  await updateDoc(doc(db, collectionName, docId), {
+  const orderRef = doc(db, collectionName, docId);
+  const snapshot = await getDoc(orderRef);
+  const previousStatus =
+    typeof snapshot.data()?.status === "string" ? snapshot.data()?.status : "";
+  const userId =
+    typeof snapshot.data()?.userId === "string" ? snapshot.data()?.userId : "";
+
+  await updateDoc(orderRef, {
     status,
     updatedAt: serverTimestamp(),
   });
+
+  if (
+    status === "delivered" &&
+    previousStatus !== "delivered" &&
+    userId
+  ) {
+    try {
+      await awardDeliveryPoints(db, docId, userId);
+    } catch {
+      // Status is already saved; points can be retried by setting delivered again.
+    }
+  }
+}
+
+async function awardDeliveryPoints(
+  db: Firestore,
+  orderId: string,
+  userId: string,
+): Promise<void> {
+  const eventRef = doc(db, "pointEvents", `order_delivered_${orderId}`);
+  const existing = await getDoc(eventRef);
+  if (existing.exists()) return;
+
+  await setDoc(eventRef, {
+    uid: userId,
+    type: "order_delivered",
+    sourceId: orderId,
+    amount: DELIVERED_POINTS,
+    createdAt: serverTimestamp(),
+  });
+
+  const patch = {
+    points: increment(DELIVERED_POINTS),
+    updatedAt: serverTimestamp(),
+  };
+
+  await updateDoc(doc(db, "users", userId), patch);
+  await setDoc(doc(db, "publicProfiles", userId), patch, { merge: true });
 }
 
 export function formatDateTime(iso: string | null): string {

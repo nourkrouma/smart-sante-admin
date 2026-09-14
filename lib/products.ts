@@ -22,6 +22,7 @@ export type ProductInput = {
   images: string[];
   sizes: string[];
   colors: ProductColor[];
+  tags: string[];
   category: ProductCategory;
 };
 
@@ -32,6 +33,22 @@ function parseStringArray(value: unknown): string[] {
 
 function normalizeStringArray(values: string[]): string[] {
   return values.map((value) => value.trim()).filter((value) => value.length > 0);
+}
+
+function normalizeUniqueStringArray(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(trimmed);
+  }
+
+  return result;
 }
 
 function isProductCategory(value: string): value is ProductCategory {
@@ -56,6 +73,7 @@ function mapFirestoreProduct(
     images: parseStringArray(data.images),
     sizes: parseStringArray(data.sizes),
     colors: parseProductColors(data.colors),
+    tags: parseStringArray(data.tags),
     category: parseCategory(data.category),
   };
 }
@@ -80,6 +98,7 @@ function normalizeProductInput(input: ProductInput): ProductInput {
     images: normalizeStringArray(input.images),
     sizes: normalizeStringArray(input.sizes),
     colors: normalizeProductColors(input.colors),
+    tags: normalizeUniqueStringArray(input.tags),
     category: input.category,
   };
 }

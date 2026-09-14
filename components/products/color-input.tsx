@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Pipette, Plus, X } from "lucide-react";
 import type { ProductColor } from "@/types/product";
 import { createProductColor, normalizeHexColor } from "@/lib/colors";
@@ -21,22 +21,42 @@ export function ColorInput({
   disabled = false,
 }: ColorInputProps) {
   const [draft, setDraft] = useState("");
+  const [pendingHex, setPendingHex] = useState<string | null>(null);
   const colorPickerRef = useRef<HTMLInputElement>(null);
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
 
-  function addColor(typeHint?: ProductColor["type"]) {
-    const color = createProductColor(draft, typeHint);
-    if (!color) return;
-
-    const exists = values.some(
+  function addColorValue(color: ProductColor) {
+    const exists = valuesRef.current.some(
       (item) =>
         item.type === color.type &&
         item.value.toLowerCase() === color.value.toLowerCase(),
     );
 
     if (!exists) {
-      onChange([...values, color]);
+      onChange([...valuesRef.current, color]);
     }
+  }
+
+  function addDraftColor(typeHint?: ProductColor["type"]) {
+    const color = createProductColor(draft, typeHint);
+    if (!color) return;
+    addColorValue(color);
     setDraft("");
+    setPendingHex(null);
+  }
+
+  function confirmPendingHex() {
+    if (!pendingHex) return;
+    const color = createProductColor(pendingHex, "hex");
+    if (!color) return;
+    addColorValue(color);
+    setDraft("");
+    setPendingHex(null);
+  }
+
+  function cancelPendingHex() {
+    setPendingHex(null);
   }
 
   function removeColor(index: number) {
@@ -46,7 +66,7 @@ export function ColorInput({
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       event.preventDefault();
-      addColor();
+      addDraftColor();
     }
   }
 
@@ -54,23 +74,25 @@ export function ColorInput({
     colorPickerRef.current?.click();
   }
 
-  function onPick(hex: string) {
-    const color = createProductColor(hex, "hex");
-    if (!color) return;
+  useEffect(() => {
+    const input = colorPickerRef.current;
+    if (!input) return;
 
-    const exists = values.some(
-      (item) =>
-        item.type === "hex" &&
-        item.value.toLowerCase() === color.value.toLowerCase(),
-    );
-
-    if (!exists) {
-      onChange([...values, color]);
+    function previewHex() {
+      const hex = normalizeHexColor(input.value);
+      if (hex) setPendingHex(hex);
     }
-    setDraft("");
-  }
 
-  const pickerValue = normalizeHexColor(draft) ?? DEFAULT_HEX;
+    input.addEventListener("input", previewHex);
+    input.addEventListener("change", previewHex);
+
+    return () => {
+      input.removeEventListener("input", previewHex);
+      input.removeEventListener("change", previewHex);
+    };
+  }, []);
+
+  const pickerValue = pendingHex ?? normalizeHexColor(draft) ?? DEFAULT_HEX;
 
   return (
     <div className="space-y-1.5">
@@ -112,7 +134,10 @@ export function ColorInput({
           <input
             type="text"
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setPendingHex(null);
+            }}
             onKeyDown={onKeyDown}
             disabled={disabled}
             className="w-full rounded-lg border border-border bg-background py-2 pl-3 pr-10 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
@@ -125,13 +150,17 @@ export function ColorInput({
             className="absolute inset-y-0 right-0 flex items-center px-2.5 text-muted transition-colors hover:text-foreground disabled:opacity-50"
             aria-label="Choisir une couleur"
           >
+            <span
+              aria-hidden
+              className="mr-1 size-3 rounded-full ring-1 ring-border"
+              style={{ backgroundColor: pickerValue }}
+            />
             <Pipette size={16} strokeWidth={1.75} />
           </button>
           <input
             ref={colorPickerRef}
             type="color"
             value={pickerValue}
-            onChange={(event) => onPick(event.target.value)}
             disabled={disabled}
             className="pointer-events-none absolute size-0 opacity-0"
             tabIndex={-1}
@@ -140,7 +169,7 @@ export function ColorInput({
         </div>
         <button
           type="button"
-          onClick={() => addColor()}
+          onClick={() => addDraftColor()}
           disabled={disabled || !draft.trim()}
           className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -148,6 +177,38 @@ export function ColorInput({
           Ajouter
         </button>
       </div>
+
+      {pendingHex ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+          <span
+            aria-hidden
+            className="size-6 shrink-0 rounded-md ring-1 ring-border"
+            style={{ backgroundColor: pendingHex }}
+          />
+          <p className="min-w-0 flex-1 text-sm text-foreground">
+            <span className="font-mono font-medium">{pendingHex}</span>
+            <span className="ml-2 text-xs text-muted">
+              Confirmez pour ajouter cette couleur
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={cancelPendingHex}
+            disabled={disabled}
+            className="rounded-lg px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={confirmPendingHex}
+            disabled={disabled}
+            className="rounded-lg bg-brand px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-black disabled:opacity-50"
+          >
+            Confirmer
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

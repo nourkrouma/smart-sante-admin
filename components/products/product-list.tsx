@@ -114,6 +114,7 @@ export function ProductList({ products }: ProductListProps) {
                   <th className="px-5 py-3.5 font-medium">Image</th>
                   <th className="px-5 py-3.5 font-medium">Nom</th>
                   <th className="px-5 py-3.5 font-medium">Prix</th>
+                  <th className="px-5 py-3.5 font-medium">Tags</th>
                   <th className="px-5 py-3.5 font-medium">Galerie</th>
                   <th className="px-5 py-3.5 font-medium text-right">Actions</th>
                 </tr>
@@ -157,6 +158,27 @@ export function ProductList({ products }: ProductListProps) {
                       </td>
                       <td className="px-5 py-4 tabular-nums text-muted">
                         {formatPrice(product.price)}
+                      </td>
+                      <td className="px-5 py-4">
+                        {product.tags.length === 0 ? (
+                          <span className="text-muted">—</span>
+                        ) : (
+                          <div className="flex max-w-56 flex-wrap gap-1">
+                            {product.tags.slice(0, 3).map((tag) => (
+                              <span
+                                key={`${product.id}-tag-${tag}`}
+                                className="rounded-md bg-background px-1.5 py-0.5 text-xs text-foreground ring-1 ring-border"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                            {product.tags.length > 3 ? (
+                              <span className="text-xs text-muted">
+                                +{product.tags.length - 3}
+                              </span>
+                            ) : null}
+                          </div>
+                        )}
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-1.5">

@@ -34,5 +34,6 @@ export type Product = {
   images: string[];
   sizes: string[];
   colors: ProductColor[];
+  tags: string[];
   category: ProductCategory;
 };

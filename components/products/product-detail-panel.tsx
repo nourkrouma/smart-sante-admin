@@ -207,6 +207,26 @@ export function ProductDetailPanel({
 
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                    Tags
+                  </p>
+                  {product.tags.length === 0 ? (
+                    <p className="mt-1 text-sm text-foreground">—</p>
+                  ) : (
+                    <ul className="mt-2 flex flex-wrap gap-1.5">
+                      {product.tags.map((tag) => (
+                        <li
+                          key={`${product.id}-tag-${tag}`}
+                          className="rounded-md bg-background px-2 py-1 text-xs font-medium text-foreground ring-1 ring-border"
+                        >
+                          {tag}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted">
                     Images
                   </p>
                   <p className="mt-1 text-sm text-foreground">
