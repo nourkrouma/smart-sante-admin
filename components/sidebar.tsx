@@ -15,7 +15,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 const nav = [
   { href: "/products", label: "Produits", icon: Package },
   { href: "/commandes", label: "Commandes", icon: ClipboardList },
-  { href: "/onboarding", label: "Onboarding", icon: ListChecks },
+  { href: "/formulaires", label: "Formulaires", icon: ListChecks },
   { href: "/users", label: "Utilisateurs", icon: Users },
   { href: "/notifications", label: "Notifications", icon: Bell },
 ];

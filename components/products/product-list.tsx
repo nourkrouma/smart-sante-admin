@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { ListSearch } from "@/components/list-search";
 import type { Product } from "@/types/product";
+import { PRODUCT_CATEGORY_LABELS } from "@/types/product";
 import { formatPrice } from "@/lib/products";
 import { ProductDetailPanel } from "@/components/products/product-detail-panel";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
@@ -57,13 +59,34 @@ export function ProductList({ products }: ProductListProps) {
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
   const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
 
-  const totalPages = Math.max(1, Math.ceil(products.length / PAGE_SIZE));
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return products;
+
+    return products.filter((product) => {
+      const haystack = [
+        product.id,
+        product.name,
+        product.category,
+        PRODUCT_CATEGORY_LABELS[product.category],
+        ...product.tags,
+        ...product.sizes,
+        ...product.colors.map((color) => color.value),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [products, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const startIndex = (safePage - 1) * PAGE_SIZE;
-  const pageProducts = products.slice(startIndex, startIndex + PAGE_SIZE);
-  const rangeStart = products.length === 0 ? 0 : startIndex + 1;
-  const rangeEnd = Math.min(startIndex + PAGE_SIZE, products.length);
+  const pageProducts = filtered.slice(startIndex, startIndex + PAGE_SIZE);
+  const rangeStart = filtered.length === 0 ? 0 : startIndex + 1;
+  const rangeEnd = Math.min(startIndex + PAGE_SIZE, filtered.length);
 
   useEffect(() => {
     if (!selected) return;
@@ -92,19 +115,32 @@ export function ProductList({ products }: ProductListProps) {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <ListSearch
+          label="Rechercher des produits"
+          value={query}
+          onChange={(value) => {
+            setQuery(value);
+            setPage(1);
+          }}
+          placeholder="Rechercher par nom, tags, catégorie…"
+        />
         <button
           type="button"
           onClick={openCreate}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black"
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black"
         >
           <Plus size={16} strokeWidth={2} />
           Ajouter un produit
         </button>
       </div>
 
-      {products.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted">Aucun produit pour le moment.</p>
+      {filtered.length === 0 ? (
+        <p className="py-16 text-center text-sm text-muted">
+          {products.length === 0
+            ? "Aucun produit pour le moment."
+            : "Aucun produit ne correspond à votre recherche."}
+        </p>
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-border bg-surface">
@@ -227,7 +263,7 @@ export function ProductList({ products }: ProductListProps) {
               </span>{" "}
               sur{" "}
               <span className="font-medium text-foreground">
-                {products.length}
+                {filtered.length}
               </span>
             </p>
 

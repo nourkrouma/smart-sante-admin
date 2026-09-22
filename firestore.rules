@@ -55,14 +55,18 @@ service cloud.firestore {
         && isStatusOnlyUpdate();
     }
 
-    function isValidOnboardingQuestion() {
+    function isNonNegativeInt(value) {
+      return value is int && value >= 0
+        || value is float && value >= 0 && value % 1 == 0;
+    }
+
+    function isValidQuestionFields(questionId, requireActive) {
       let data = request.resource.data;
       return data.id == questionId
         && data.title is string
         && data.title.size() > 0
         && data.type in ['single', 'multiple', 'text']
-        && data.order is int
-        && data.order >= 0
+        && isNonNegativeInt(data.order)
         && data.required is bool
         && data.options is list
         && (
@@ -71,7 +75,65 @@ service cloud.firestore {
             (data.type == 'single' || data.type == 'multiple')
             && data.options.size() >= 2
           )
-        );
+        )
+        && (!requireActive || data.active is bool);
+    }
+
+    function isValidPopupSurvey(surveyId) {
+      let data = request.resource.data;
+      return data.id == surveyId
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 200
+        && data.description is string
+        && data.description.size() <= 1000
+        && data.active is bool
+        && isNonNegativeInt(data.order)
+        && data.questions is list
+        && data.questions.size() <= 40;
+    }
+
+    function isValidPopupSurveyAnswer(answerId) {
+      let data = request.resource.data;
+      return data.uid == request.auth.uid
+        && data.surveyId is string
+        && data.surveyId.size() > 0
+        && answerId == request.auth.uid + '_' + data.surveyId
+        && exists(/databases/$(database)/documents/popupSurveys/$(data.surveyId))
+        && data.answers is map
+        && data.answeredAt == request.time
+        && data.keys().hasOnly([
+          'uid',
+          'surveyId',
+          'answers',
+          'answeredAt'
+        ]);
+    }
+
+    function isValidPopupAnswer(answerId) {
+      let data = request.resource.data;
+      return data.uid == request.auth.uid
+        && data.questionId is string
+        && data.questionId.size() > 0
+        && answerId == request.auth.uid + '_' + data.questionId
+        && exists(/databases/$(database)/documents/popupQuestions/$(data.questionId))
+        && data.type in ['single', 'multiple', 'text']
+        && data.values is list
+        && data.values.size() > 0
+        && data.values.size() <= 50
+        && data.values[0] is string
+        && (
+          (data.type in ['single', 'text'] && data.values.size() == 1)
+          || data.type == 'multiple'
+        )
+        && data.answeredAt == request.time
+        && data.keys().hasOnly([
+          'uid',
+          'questionId',
+          'type',
+          'values',
+          'answeredAt'
+        ]);
     }
 
     function authEmail() {
@@ -195,8 +257,38 @@ service cloud.firestore {
 
     match /onboardingQuestions/{questionId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() && isValidOnboardingQuestion();
+      allow create, update: if isAdmin() && isValidQuestionFields(questionId, false);
       allow delete: if isAdmin();
+    }
+
+    match /popupQuestions/{questionId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() && isValidQuestionFields(questionId, true);
+      allow delete: if isAdmin();
+    }
+
+    match /popupSurveys/{surveyId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() && isValidPopupSurvey(surveyId);
+      allow delete: if isAdmin();
+    }
+
+    match /popupAnswers/{answerId} {
+      allow read: if isSignedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidPopupAnswer(answerId);
+      allow update, delete: if false;
+    }
+
+    match /popupSurveyAnswers/{answerId} {
+      allow read: if isSignedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidPopupSurveyAnswer(answerId);
+      allow update, delete: if false;
+    }
+
+    match /notificationLogs/{logId} {
+      allow read, write: if isAdmin();
     }
 
     match /referral_codes/{code} {

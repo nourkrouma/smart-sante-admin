@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ListSearch } from "@/components/list-search";
 import { UserDetailPanel } from "@/components/users/user-detail-panel";
 import { EditPointsDialog } from "@/components/users/edit-points-dialog";
 import { formatOptionalText } from "@/lib/orders";
@@ -57,21 +58,12 @@ export function UserList({ users, onPointsUpdated }: UserListProps) {
   return (
     <>
       <div className="mb-4">
-        <label className="relative block">
-          <span className="sr-only">Rechercher des utilisateurs</span>
-          <Search
-            size={16}
-            strokeWidth={1.75}
-            className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Rechercher par nom, e-mail, téléphone…"
-            className="w-full rounded-lg border border-border bg-surface py-2 pr-3 pl-9 text-sm text-foreground outline-none placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/20"
-          />
-        </label>
+        <ListSearch
+          label="Rechercher des utilisateurs"
+          value={query}
+          onChange={setQuery}
+          placeholder="Rechercher par nom, e-mail, téléphone…"
+        />
       </div>
 
       {filtered.length === 0 ? (

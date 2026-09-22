@@ -1,5 +1,5 @@
-import { OnboardingView } from "@/components/onboarding/onboarding-view";
+import { redirect } from "next/navigation";
 
-export default function OnboardingPage() {
-  return <OnboardingView />;
+export default function OnboardingRedirectPage() {
+  redirect("/formulaires");
 }

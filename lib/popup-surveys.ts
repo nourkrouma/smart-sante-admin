@@ -12,21 +12,19 @@ import { getFirebaseDb } from "@/lib/firebase";
 import { firestoreUserMessage } from "@/lib/firestore-errors";
 import {
   isOnboardingQuestionType,
-  type OnboardingAnswerValue,
-  type OnboardingAnswers,
-  type OnboardingQuestion,
   type OnboardingQuestionType,
-  type QuestionAnswerStats,
 } from "@/types/onboarding";
+import type { PopupSurvey, PopupSurveyQuestion } from "@/types/popup-survey";
 
-const QUESTIONS_COLLECTION = "onboardingQuestions";
+const SURVEYS_COLLECTION = "popupSurveys";
+const MAX_QUESTIONS = 40;
 
-export type OnboardingQuestionInput = {
+export type PopupSurveyInput = {
   title: string;
-  type: OnboardingQuestionType;
-  options: string[];
+  description: string;
+  active: boolean;
   order: number;
-  required: boolean;
+  questions: PopupSurveyQuestion[];
 };
 
 function parseString(value: unknown): string {
@@ -108,25 +106,18 @@ function normalizeStringArray(values: string[]): string[] {
   return result;
 }
 
-function mapFirestoreQuestion(
-  id: string,
-  data: Record<string, unknown>,
-): OnboardingQuestion {
-  return {
-    id: parseString(data.id) || id,
-    title: parseString(data.title),
-    type: parseQuestionType(data.type),
-    options: parseStringArray(data.options),
-    order: parseNumber(data.order),
-    required: parseBoolean(data.required),
-    createdAt: parseTimestamp(data.createdAt),
-    updatedAt: parseTimestamp(data.updatedAt),
-  };
+export function sortSurveyQuestions(
+  questions: PopupSurveyQuestion[],
+): PopupSurveyQuestion[] {
+  return [...questions].sort(
+    (a, b) => a.order - b.order || a.title.localeCompare(b.title, "fr"),
+  );
 }
 
-function normalizeQuestionInput(
-  input: OnboardingQuestionInput,
-): OnboardingQuestionInput {
+function normalizeQuestion(
+  input: PopupSurveyQuestion,
+  fallbackId: string,
+): PopupSurveyQuestion {
   const title = input.title.trim();
   if (!title) {
     throw new Error("Le titre de la question est requis");
@@ -148,6 +139,7 @@ function normalizeQuestionInput(
   }
 
   return {
+    id: input.id.trim() || fallbackId,
     title,
     type: input.type,
     options,
@@ -156,31 +148,115 @@ function normalizeQuestionInput(
   };
 }
 
-export async function getOnboardingQuestions(
+function mapFirestoreQuestion(value: unknown, index: number): PopupSurveyQuestion {
+  const data =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+
+  return {
+    id: parseString(data.id) || `q-${index + 1}`,
+    title: parseString(data.title),
+    type: parseQuestionType(data.type),
+    options: parseStringArray(data.options),
+    order: parseNumber(data.order),
+    required: parseBoolean(data.required),
+  };
+}
+
+function mapFirestoreSurvey(
+  id: string,
+  data: Record<string, unknown>,
+): PopupSurvey {
+  const questions = Array.isArray(data.questions)
+    ? data.questions.map((item, index) => mapFirestoreQuestion(item, index))
+    : [];
+
+  return {
+    id: parseString(data.id) || id,
+    title: parseString(data.title),
+    description: parseString(data.description),
+    active: data.active !== false,
+    order: parseNumber(data.order),
+    questions: sortSurveyQuestions(questions),
+    createdAt: parseTimestamp(data.createdAt),
+    updatedAt: parseTimestamp(data.updatedAt),
+  };
+}
+
+function normalizeSurveyInput(input: PopupSurveyInput): PopupSurveyInput {
+  const title = input.title.trim();
+  if (!title) {
+    throw new Error("Le titre de l’enquête est requis");
+  }
+
+  if (title.length > 200) {
+    throw new Error("Le titre ne peut pas dépasser 200 caractères");
+  }
+
+  const description = input.description.trim();
+  if (description.length > 1000) {
+    throw new Error("La description ne peut pas dépasser 1000 caractères");
+  }
+
+  if (!Number.isFinite(input.order) || input.order < 0) {
+    throw new Error("L’ordre doit être un entier positif ou nul");
+  }
+
+  if (input.questions.length > MAX_QUESTIONS) {
+    throw new Error(`Une enquête peut contenir au plus ${MAX_QUESTIONS} questions`);
+  }
+
+  const questions = sortSurveyQuestions(
+    input.questions.map((question, index) =>
+      normalizeQuestion(question, `${Date.now()}-${index}`),
+    ),
+  );
+
+  const ids = new Set<string>();
+  for (const question of questions) {
+    if (ids.has(question.id)) {
+      throw new Error("Chaque question doit avoir un identifiant unique");
+    }
+    ids.add(question.id);
+  }
+
+  return {
+    title,
+    description,
+    active: Boolean(input.active),
+    order: Math.trunc(input.order),
+    questions,
+  };
+}
+
+export function nextSurveyOrder(surveys: PopupSurvey[]): number {
+  if (surveys.length === 0) return 1;
+  return Math.max(...surveys.map((survey) => survey.order)) + 1;
+}
+
+export async function getPopupSurveys(
   db: Firestore = getFirebaseDb(),
-): Promise<OnboardingQuestion[]> {
-  const snapshot = await getDocs(collection(db, QUESTIONS_COLLECTION));
+): Promise<PopupSurvey[]> {
+  const snapshot = await getDocs(collection(db, SURVEYS_COLLECTION));
 
   return snapshot.docs
     .map((docSnap) =>
-      mapFirestoreQuestion(
-        docSnap.id,
-        docSnap.data() as Record<string, unknown>,
-      ),
+      mapFirestoreSurvey(docSnap.id, docSnap.data() as Record<string, unknown>),
     )
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, "fr"));
 }
 
-export async function createOnboardingQuestion(
-  input: OnboardingQuestionInput,
+export async function createPopupSurvey(
+  input: PopupSurveyInput,
   db: Firestore = getFirebaseDb(),
-): Promise<OnboardingQuestion> {
-  const normalized = normalizeQuestionInput(input);
+): Promise<PopupSurvey> {
+  const normalized = normalizeSurveyInput(input);
   const id = `${Date.now()}`;
   const now = new Date().toISOString();
 
   try {
-    await setDoc(doc(db, QUESTIONS_COLLECTION, id), {
+    await setDoc(doc(db, SURVEYS_COLLECTION, id), {
       id,
       ...normalized,
       createdAt: serverTimestamp(),
@@ -188,28 +264,28 @@ export async function createOnboardingQuestion(
     });
   } catch (error) {
     throw new Error(
-      firestoreUserMessage(error, "Impossible de créer la question"),
+      firestoreUserMessage(error, "Impossible de créer l’enquête"),
     );
   }
 
   return { id, ...normalized, createdAt: now, updatedAt: now };
 }
 
-export async function updateOnboardingQuestion(
+export async function updatePopupSurvey(
   id: string,
-  input: OnboardingQuestionInput,
+  input: PopupSurveyInput,
   db: Firestore = getFirebaseDb(),
-): Promise<OnboardingQuestion> {
+): Promise<PopupSurvey> {
   if (!id.trim()) {
-    throw new Error("L’identifiant de la question est requis");
+    throw new Error("L’identifiant de l’enquête est requis");
   }
 
-  const normalized = normalizeQuestionInput(input);
+  const normalized = normalizeSurveyInput(input);
   const now = new Date().toISOString();
 
   try {
     await setDoc(
-      doc(db, QUESTIONS_COLLECTION, id),
+      doc(db, SURVEYS_COLLECTION, id),
       {
         id,
         ...normalized,
@@ -219,111 +295,26 @@ export async function updateOnboardingQuestion(
     );
   } catch (error) {
     throw new Error(
-      firestoreUserMessage(error, "Impossible de modifier la question"),
+      firestoreUserMessage(error, "Impossible de modifier l’enquête"),
     );
   }
 
   return { id, ...normalized, createdAt: null, updatedAt: now };
 }
 
-export async function deleteOnboardingQuestion(
+export async function deletePopupSurvey(
   id: string,
   db: Firestore = getFirebaseDb(),
 ): Promise<void> {
   if (!id.trim()) {
-    throw new Error("L’identifiant de la question est requis");
+    throw new Error("L’identifiant de l’enquête est requis");
   }
 
   try {
-    await deleteDoc(doc(db, QUESTIONS_COLLECTION, id));
+    await deleteDoc(doc(db, SURVEYS_COLLECTION, id));
   } catch (error) {
     throw new Error(
-      firestoreUserMessage(error, "Impossible de supprimer la question"),
+      firestoreUserMessage(error, "Impossible de supprimer l’enquête"),
     );
   }
-}
-
-export function parseOnboardingAnswers(value: unknown): OnboardingAnswers {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  const answers: OnboardingAnswers = {};
-
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof raw === "string") {
-      answers[key] = raw;
-      continue;
-    }
-
-    if (Array.isArray(raw)) {
-      answers[key] = raw.filter((item): item is string => typeof item === "string");
-    }
-  }
-
-  return answers;
-}
-
-function selectedChoices(value: OnboardingAnswerValue | undefined): string[] {
-  if (value == null) return [];
-  if (Array.isArray(value)) {
-    return value.map((item) => item.trim()).filter(Boolean);
-  }
-  const trimmed = value.trim();
-  return trimmed ? [trimmed] : [];
-}
-
-export function getQuestionAnswerStats(
-  questions: OnboardingQuestion[],
-  users: { onboardingAnswers: OnboardingAnswers }[],
-): QuestionAnswerStats[] {
-  const total = users.length;
-
-  return questions.map((question) => {
-    const counts = new Map<string, number>();
-    for (const option of question.options) {
-      counts.set(option, 0);
-    }
-
-    let answered = 0;
-    let otherCount = 0;
-
-    for (const user of users) {
-      const choices = selectedChoices(user.onboardingAnswers[question.id]);
-      if (choices.length === 0) continue;
-      answered += 1;
-
-      if (question.type === "text") continue;
-
-      for (const choice of choices) {
-        if (counts.has(choice)) {
-          counts.set(choice, (counts.get(choice) ?? 0) + 1);
-        } else {
-          otherCount += 1;
-        }
-      }
-    }
-
-    return {
-      question,
-      total,
-      answered,
-      skipped: total - answered,
-      optionCounts: question.options.map((option) => ({
-        option,
-        count: counts.get(option) ?? 0,
-      })),
-      otherCount,
-    };
-  });
-}
-
-export function formatAnswerPercent(count: number, total: number): string {
-  if (total <= 0) return "0 %";
-  return `${Math.round((count / total) * 100)} %`;
-}
-
-export function nextQuestionOrder(questions: { order: number }[]): number {
-  if (questions.length === 0) return 1;
-  return Math.max(...questions.map((question) => question.order)) + 1;
 }

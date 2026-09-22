@@ -3,12 +3,23 @@
 import { useEffect, useState } from "react";
 import { QuestionsList } from "@/components/onboarding/questions-list";
 import { ResponseStats } from "@/components/onboarding/response-stats";
-import { getOnboardingQuestions } from "@/lib/onboarding";
+import {
+  createOnboardingQuestion,
+  deleteOnboardingQuestion,
+  getOnboardingQuestions,
+  updateOnboardingQuestion,
+} from "@/lib/onboarding";
 import { getUsers } from "@/lib/users";
 import type { OnboardingQuestion } from "@/types/onboarding";
 import type { AppUser } from "@/types/user";
 
 type OnboardingTab = "questions" | "stats";
+
+function sortQuestions(questions: OnboardingQuestion[]) {
+  return [...questions].sort(
+    (a, b) => a.order - b.order || a.title.localeCompare(b.title, "fr"),
+  );
+}
 
 export function OnboardingView() {
   const [tab, setTab] = useState<OnboardingTab>("questions");
@@ -43,27 +54,20 @@ export function OnboardingView() {
 
   function handleQuestionCreated(question: OnboardingQuestion) {
     setQuestions((current) =>
-      current
-        ? [...current, question].sort(
-            (a, b) => a.order - b.order || a.title.localeCompare(b.title, "fr"),
-          )
-        : current,
+      current ? sortQuestions([...current, question]) : current,
     );
   }
 
   function handleQuestionUpdated(question: OnboardingQuestion) {
     setQuestions((current) =>
       current
-        ? current
-            .map((item) =>
+        ? sortQuestions(
+            current.map((item) =>
               item.id === question.id
                 ? { ...item, ...question, createdAt: item.createdAt }
                 : item,
-            )
-            .sort(
-              (a, b) =>
-                a.order - b.order || a.title.localeCompare(b.title, "fr"),
-            )
+            ),
+          )
         : current,
     );
   }
@@ -77,22 +81,11 @@ export function OnboardingView() {
   const loaded = questions !== null && users !== null;
 
   return (
-    <div className="w-full px-4 py-8 sm:px-8 sm:py-10">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Onboarding
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          {loaded
-            ? `${questions.length} question${questions.length === 1 ? "" : "s"} · ${users.length} utilisateur${users.length === 1 ? "" : "s"}`
-            : "Chargement de l’onboarding…"}
-        </p>
-      </header>
-
+    <>
       <div
         role="tablist"
         aria-label="Sections onboarding"
-        className="mb-6 flex gap-1 rounded-lg border border-border bg-surface p-1"
+        className="mb-6 flex gap-5 border-b border-border"
       >
         {(
           [
@@ -108,10 +101,10 @@ export function OnboardingView() {
               role="tab"
               aria-selected={selected}
               onClick={() => setTab(item.id)}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              className={`-mb-px border-b-2 px-0.5 pb-2 text-sm font-medium transition-colors ${
                 selected
-                  ? "bg-brand text-white"
-                  : "text-muted hover:bg-background hover:text-foreground"
+                  ? "border-brand text-foreground"
+                  : "border-transparent text-muted hover:text-foreground"
               }`}
             >
               {item.label}
@@ -130,6 +123,19 @@ export function OnboardingView() {
         tab === "questions" ? (
           <QuestionsList
             questions={questions}
+            onSubmit={(id, input) => {
+              const payload = {
+                title: input.title,
+                type: input.type,
+                options: input.options,
+                order: input.order,
+                required: input.required,
+              };
+              return id
+                ? updateOnboardingQuestion(id, payload)
+                : createOnboardingQuestion(payload);
+            }}
+            onDelete={deleteOnboardingQuestion}
             onCreated={handleQuestionCreated}
             onUpdated={handleQuestionUpdated}
             onDeleted={handleQuestionDeleted}
@@ -148,6 +154,6 @@ export function OnboardingView() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

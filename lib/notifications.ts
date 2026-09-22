@@ -9,12 +9,28 @@ export type PushNotificationInput = {
 };
 
 export type PushNotificationResult = {
-  sent: false;
+  sent: boolean;
   message: string;
+  messageId?: string;
+  topic?: string;
 };
+
+export const ALL_USERS_TOPIC = "all_users";
 
 const MAX_TITLE_LENGTH = 80;
 const MAX_BODY_LENGTH = 500;
+
+export function pushNotificationTopic(
+  audience: NotificationAudience,
+  userId?: string,
+): string {
+  if (audience === "all") return ALL_USERS_TOPIC;
+  const id = userId?.trim();
+  if (!id) {
+    throw new Error("Sélectionnez un utilisateur");
+  }
+  return `user_${id}`;
+}
 
 export function normalizePushNotification(
   input: PushNotificationInput,
@@ -67,16 +83,4 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-export async function sendPushNotification(
-  input: PushNotificationInput,
-): Promise<PushNotificationResult> {
-  normalizePushNotification(input);
-
-  return {
-    sent: false,
-    message:
-      "L’envoi n’est pas encore connecté. Aucune notification n’a été envoyée.",
-  };
 }

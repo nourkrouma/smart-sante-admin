@@ -1,18 +1,22 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
-import { deleteOnboardingQuestion } from "@/lib/onboarding";
-import type { OnboardingQuestion } from "@/types/onboarding";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 
 type DeleteQuestionDialogProps = {
-  question: OnboardingQuestion | null;
+  question: { id: string; title: string } | null;
+  heading?: string;
+  description?: ReactNode;
   onClose: () => void;
+  onDelete: (id: string) => Promise<void>;
   onDeleted: (id: string) => void;
 };
 
 export function DeleteQuestionDialog({
   question,
+  heading = "Supprimer la question ?",
+  description,
   onClose,
+  onDelete,
   onDeleted,
 }: DeleteQuestionDialogProps) {
   const open = question !== null;
@@ -46,7 +50,7 @@ export function DeleteQuestionDialog({
 
     startTransition(async () => {
       try {
-        await deleteOnboardingQuestion(question.id);
+        await onDelete(question.id);
         onDeleted(question.id);
         onClose();
       } catch (mutationError) {
@@ -81,13 +85,19 @@ export function DeleteQuestionDialog({
           id="delete-question-title"
           className="text-base font-semibold text-foreground"
         >
-          Supprimer la question ?
+          {heading}
         </h2>
         <p id="delete-question-desc" className="mt-2 text-sm text-muted">
-          Cette action supprimera{" "}
-          <span className="font-medium text-foreground">{question.title}</span>.
-          Les réponses restent enregistrées sur les documents utilisateurs. Les
-          statistiques n’incluront plus cette question.
+          {description ?? (
+            <>
+              Cette action supprimera{" "}
+              <span className="font-medium text-foreground">
+                {question.title}
+              </span>
+              . Les réponses restent enregistrées sur les documents
+              utilisateurs. Les statistiques n’incluront plus cette question.
+            </>
+          )}
         </p>
 
         {error ? (

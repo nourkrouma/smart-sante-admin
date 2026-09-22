@@ -2,65 +2,48 @@
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { X } from "lucide-react";
-import { TagInput } from "@/components/products/tag-input";
-import {
-  ONBOARDING_QUESTION_TYPES,
-  ONBOARDING_QUESTION_TYPE_LABELS,
-  type OnboardingQuestionType,
-} from "@/types/onboarding";
+import type { PopupSurvey } from "@/types/popup-survey";
 
-export type QuestionFormInput = {
+export type SurveyFormInput = {
   title: string;
-  type: OnboardingQuestionType;
-  options: string[];
+  description: string;
   order: number;
-  required: boolean;
+  active: boolean;
 };
 
-export type QuestionFormValue = {
-  id: string;
-  title: string;
-  type: OnboardingQuestionType;
-  options: string[];
-  order: number;
-  required: boolean;
-};
-
-type QuestionFormDialogProps<T> = {
+type SurveyFormDialogProps = {
   open: boolean;
-  question: QuestionFormValue | null;
+  survey: PopupSurvey | null;
   nextOrder: number;
   onClose: () => void;
-  onSubmit: (input: QuestionFormInput) => Promise<T>;
-  onSaved: (question: T) => void;
+  onSubmit: (input: SurveyFormInput) => Promise<PopupSurvey>;
+  onSaved: (survey: PopupSurvey) => void;
 };
 
-export function QuestionFormDialog<T>({
+export function SurveyFormDialog({
   open,
-  question,
+  survey,
   nextOrder,
   onClose,
   onSubmit,
   onSaved,
-}: QuestionFormDialogProps<T>) {
-  const isEdit = question !== null;
+}: SurveyFormDialogProps) {
+  const isEdit = survey !== null;
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<OnboardingQuestionType>("single");
-  const [options, setOptions] = useState<string[]>([]);
+  const [description, setDescription] = useState("");
   const [order, setOrder] = useState("1");
-  const [required, setRequired] = useState(true);
+  const [active, setActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!open) return;
-    setTitle(question?.title ?? "");
-    setType(question?.type ?? "single");
-    setOptions(question?.options ?? []);
-    setOrder(String(question?.order ?? nextOrder));
-    setRequired(question?.required ?? true);
+    setTitle(survey?.title ?? "");
+    setDescription(survey?.description ?? "");
+    setOrder(String(survey?.order ?? nextOrder));
+    setActive(survey?.active ?? true);
     setError(null);
-  }, [open, question, nextOrder]);
+  }, [open, survey, nextOrder]);
 
   useEffect(() => {
     if (!open) return;
@@ -84,17 +67,14 @@ export function QuestionFormDialog<T>({
     setError(null);
 
     const parsedOrder = Number.parseInt(order, 10);
-    const input: QuestionFormInput = {
-      title,
-      type,
-      options: type === "text" ? [] : options,
-      order: Number.isFinite(parsedOrder) ? parsedOrder : Number.NaN,
-      required,
-    };
-
     startTransition(async () => {
       try {
-        const saved = await onSubmit(input);
+        const saved = await onSubmit({
+          title,
+          description,
+          order: Number.isFinite(parsedOrder) ? parsedOrder : Number.NaN,
+          active,
+        });
         onSaved(saved);
         onClose();
       } catch (mutationError) {
@@ -102,8 +82,8 @@ export function QuestionFormDialog<T>({
           mutationError instanceof Error
             ? mutationError.message
             : isEdit
-              ? "Impossible de modifier la question"
-              : "Impossible de créer la question",
+              ? "Impossible de modifier l’enquête"
+              : "Impossible de créer l’enquête",
         );
       }
     });
@@ -123,15 +103,15 @@ export function QuestionFormDialog<T>({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="question-form-title"
+        aria-labelledby="survey-form-title"
         className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-surface shadow-xl"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface px-5 py-4">
           <h2
-            id="question-form-title"
+            id="survey-form-title"
             className="text-base font-semibold text-foreground"
           >
-            {isEdit ? "Modifier la question" : "Ajouter une question"}
+            {isEdit ? "Modifier l’enquête" : "Nouvelle enquête pop-up"}
           </h2>
           <button
             type="button"
@@ -147,49 +127,34 @@ export function QuestionFormDialog<T>({
         <form onSubmit={handleSubmit} className="space-y-4 px-5 py-5">
           <label className="block space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Question
+              Titre
             </span>
             <input
               type="text"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               required
+              maxLength={200}
               disabled={isPending}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              placeholder="Texte de la question"
+              placeholder="Ex. Satisfaction de la semaine"
             />
           </label>
 
           <label className="block space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Type
+              Description (optionnel)
             </span>
-            <select
-              value={type}
-              onChange={(event) =>
-                setType(event.target.value as OnboardingQuestionType)
-              }
-              required
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              maxLength={1000}
+              rows={3}
               disabled={isPending}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-            >
-              {ONBOARDING_QUESTION_TYPES.map((value) => (
-                <option key={value} value={value}>
-                  {ONBOARDING_QUESTION_TYPE_LABELS[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {type !== "text" ? (
-            <TagInput
-              label="Options"
-              values={options}
-              onChange={setOptions}
-              placeholder="Ajouter une option"
-              disabled={isPending}
+              className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+              placeholder="Texte d’introduction affiché avec l’enquête"
             />
-          ) : null}
+          </label>
 
           <label className="block space-y-1.5">
             <span className="text-xs font-medium uppercase tracking-wide text-muted">
@@ -210,12 +175,12 @@ export function QuestionFormDialog<T>({
           <label className="flex items-center gap-2 text-sm text-foreground">
             <input
               type="checkbox"
-              checked={required}
-              onChange={(event) => setRequired(event.target.checked)}
+              checked={active}
+              onChange={(event) => setActive(event.target.checked)}
               disabled={isPending}
               className="size-4 rounded border-border text-brand accent-brand"
             />
-            Réponse obligatoire
+            Enquête active (peut s’afficher dans l’application)
           </label>
 
           {error ? (
@@ -244,7 +209,7 @@ export function QuestionFormDialog<T>({
                   : "Création…"
                 : isEdit
                   ? "Enregistrer"
-                  : "Créer la question"}
+                  : "Créer l’enquête"}
             </button>
           </div>
         </form>

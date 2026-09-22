@@ -1,33 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
-import { QuestionFormDialog } from "@/components/onboarding/question-form-dialog";
+import {
+  QuestionFormDialog,
+  type QuestionFormInput,
+  type QuestionFormValue,
+} from "@/components/onboarding/question-form-dialog";
 import { DeleteQuestionDialog } from "@/components/onboarding/delete-question-dialog";
 import { nextQuestionOrder } from "@/lib/onboarding";
 import {
   onboardingQuestionTypeLabel,
-  type OnboardingQuestion,
+  type OnboardingQuestionType,
 } from "@/types/onboarding";
 
 const PAGE_SIZE = 10;
 
-type QuestionsListProps = {
-  questions: OnboardingQuestion[];
-  onCreated: (question: OnboardingQuestion) => void;
-  onUpdated: (question: OnboardingQuestion) => void;
+export type ListedQuestion = {
+  id: string;
+  title: string;
+  type: OnboardingQuestionType;
+  options: string[];
+  order: number;
+  required: boolean;
+};
+
+type QuestionsListProps<T extends ListedQuestion> = {
+  questions: T[];
+  addLabel?: string;
+  emptyLabel?: string;
+  deleteDescription?: (question: T) => ReactNode;
+  onSubmit: (id: string | null, input: QuestionFormInput) => Promise<T>;
+  onDelete: (id: string) => Promise<void>;
+  onCreated: (question: T) => void;
+  onUpdated: (question: T) => void;
   onDeleted: (id: string) => void;
 };
 
-export function QuestionsList({
+export function QuestionsList<T extends ListedQuestion>({
   questions,
+  addLabel = "Ajouter une question",
+  emptyLabel = "Aucune question pour le moment.",
+  deleteDescription,
+  onSubmit,
+  onDelete,
   onCreated,
   onUpdated,
   onDeleted,
-}: QuestionsListProps) {
+}: QuestionsListProps<T>) {
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<OnboardingQuestion | null>(null);
-  const [deleting, setDeleting] = useState<OnboardingQuestion | null>(null);
+  const [editing, setEditing] = useState<T | null>(null);
+  const [deleting, setDeleting] = useState<T | null>(null);
   const [page, setPage] = useState(1);
 
   const totalPages = Math.max(1, Math.ceil(questions.length / PAGE_SIZE));
@@ -46,9 +69,20 @@ export function QuestionsList({
     setFormOpen(true);
   }
 
-  function openEdit(question: OnboardingQuestion) {
+  function openEdit(question: T) {
     setEditing(question);
     setFormOpen(true);
+  }
+
+  function toFormValue(question: T): QuestionFormValue {
+    return {
+      id: question.id,
+      title: question.title,
+      type: question.type,
+      options: question.options,
+      order: question.order,
+      required: question.required,
+    };
   }
 
   return (
@@ -60,14 +94,12 @@ export function QuestionsList({
           className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black"
         >
           <Plus size={16} strokeWidth={2} />
-          Ajouter une question
+          {addLabel}
         </button>
       </div>
 
       {questions.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted">
-          Aucune question pour le moment.
-        </p>
+        <p className="py-16 text-center text-sm text-muted">{emptyLabel}</p>
       ) : (
         <>
           <div className="overflow-x-auto rounded-lg border border-border bg-surface">
@@ -178,12 +210,13 @@ export function QuestionsList({
 
       <QuestionFormDialog
         open={formOpen}
-        question={editing}
+        question={editing ? toFormValue(editing) : null}
         nextOrder={nextQuestionOrder(questions)}
         onClose={() => {
           setFormOpen(false);
           setEditing(null);
         }}
+        onSubmit={(input) => onSubmit(editing?.id ?? null, input)}
         onSaved={(saved) => {
           if (editing) onUpdated(saved);
           else onCreated(saved);
@@ -192,7 +225,13 @@ export function QuestionsList({
 
       <DeleteQuestionDialog
         question={deleting}
+        description={
+          deleting && deleteDescription
+            ? deleteDescription(deleting)
+            : undefined
+        }
         onClose={() => setDeleting(null)}
+        onDelete={onDelete}
         onDeleted={onDeleted}
       />
     </>

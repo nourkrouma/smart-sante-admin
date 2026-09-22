@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
 import { Bell } from "lucide-react";
+import { sendPushNotification } from "@/lib/send-push-notification";
 import {
-  sendPushNotification,
+  ALL_USERS_TOPIC,
   type NotificationAudience,
 } from "@/lib/notifications";
 import { getUsers, userDisplayName } from "@/lib/users";
@@ -85,7 +86,7 @@ export function NotificationComposer() {
         setError(
           mutationError instanceof Error
             ? mutationError.message
-            : "Impossible de préparer la notification",
+            : "Impossible d’envoyer la notification",
         );
       }
     });
@@ -98,8 +99,10 @@ export function NotificationComposer() {
           Notifications
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Composez une notification push. L’envoi réel n’est pas encore
-          connecté.
+          Envoi via Firebase Cloud Messaging. L’application mobile doit
+          s’abonner au sujet{" "}
+          <code className="font-medium">{ALL_USERS_TOPIC}</code> et à{" "}
+          <code className="font-medium">{`user_{uid}`}</code>.
         </p>
       </header>
 
@@ -243,7 +246,7 @@ export function NotificationComposer() {
               className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Bell size={16} strokeWidth={2} />
-              {isPending ? "Préparation…" : "Envoyer"}
+              {isPending ? "Envoi…" : "Envoyer"}
             </button>
           </div>
         </form>
@@ -272,9 +275,9 @@ export function NotificationComposer() {
           </div>
           <p className="mt-3 text-xs text-muted">
             {audience === "all"
-              ? "Destinataires : tous les utilisateurs"
+              ? `Destinataires : tous les utilisateurs (sujet ${ALL_USERS_TOPIC})`
               : selectedUser
-                ? `Destinataire : ${userDisplayName(selectedUser)}`
+                ? `Destinataire : ${userDisplayName(selectedUser)} (sujet user_${selectedUser.id})`
                 : "Destinataire : un utilisateur à sélectionner"}
           </p>
         </aside>
