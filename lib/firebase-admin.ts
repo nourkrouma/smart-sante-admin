@@ -17,8 +17,9 @@ function isConfigError(error: unknown): boolean {
   return (
     message.startsWith("Configuration serveur") ||
     message.startsWith("FIREBASE_SERVICE_ACCOUNT") ||
+    message.startsWith("Compte de service") ||
     message.includes("Failed to parse private key") ||
-    message.includes("error:1E08010C") || // OpenSSL PEM parse
+    message.includes("error:1E08010C") ||
     message.includes("Invalid PEM") ||
     /credential|private[_ ]key|service account/i.test(message)
   );
@@ -26,16 +27,16 @@ function isConfigError(error: unknown): boolean {
 
 export function adminConfigErrorMessage(error: unknown): string | null {
   if (!isConfigError(error)) return null;
-  if (error instanceof Error && error.message.startsWith("Configuration serveur")) {
-    return error.message;
+  if (error instanceof Error) {
+    if (
+      error.message.startsWith("Configuration serveur") ||
+      error.message.startsWith("FIREBASE_SERVICE_ACCOUNT") ||
+      error.message.startsWith("Compte de service")
+    ) {
+      return error.message;
+    }
   }
-  if (
-    error instanceof Error &&
-    error.message.startsWith("FIREBASE_SERVICE_ACCOUNT")
-  ) {
-    return error.message;
-  }
-  return "Configuration Firebase Admin invalide (compte de service / clé privée). Vérifiez FIREBASE_SERVICE_ACCOUNT_JSON sur Vercel.";
+  return "Configuration Firebase Admin invalide (compte de service / clé privée). Vérifiez FIREBASE_SERVICE_ACCOUNT_BASE64 sur Vercel.";
 }
 
 function stripWrappingQuotes(value: string): string {
@@ -51,11 +52,9 @@ function stripWrappingQuotes(value: string): string {
 
 function normalizePrivateKey(key: string): string {
   let normalized = key.trim();
-  // Vercel / .env often store literal \n sequences
   if (normalized.includes("\\n") && !normalized.includes("\n")) {
     normalized = normalized.replace(/\\n/g, "\n");
   }
-  // Sometimes double-escaped
   if (normalized.includes("\\n")) {
     normalized = normalized.replace(/\\n/g, "\n");
   }
@@ -66,7 +65,6 @@ function parseJsonLenient(raw: string): unknown {
   try {
     return JSON.parse(raw);
   } catch {
-    // Common Vercel / .env artifact: extra quotes before the closing brace
     const repaired = raw
       .replace(/^\uFEFF/, "")
       .replace(/"+(\s*})\s*$/, '"$1')
@@ -75,98 +73,138 @@ function parseJsonLenient(raw: string): unknown {
   }
 }
 
-function parseServiceAccountJson(rawInput: string): ServiceAccount {
-  let raw = stripWrappingQuotes(rawInput.trim());
+function envDiagnostics(): string {
+  const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim() ?? "";
+  const b64 = (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ?? "")
+    .trim()
+    .replace(/\s+/g, "");
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() ?? "";
+  return `diag: base64=${b64 ? `yes(${b64.length})` : "no"} json=${json ? `yes(${json.length})` : "no"} projectId=${projectId ? "yes" : "no"}`;
+}
 
-  // Optional base64 form (more reliable on Vercel than giant JSON strings)
-  if (!raw.startsWith("{")) {
-    try {
-      const decoded = Buffer.from(raw, "base64").toString("utf8").trim();
-      if (decoded.startsWith("{")) {
-        raw = decoded;
-      }
-    } catch {
-      // keep raw for JSON.parse error below
-    }
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = parseJsonLenient(raw);
-  } catch {
-    throw new Error(
-      "FIREBASE_SERVICE_ACCOUNT_JSON est invalide. Collez le JSON sur une seule ligne (ou une valeur base64 du JSON).",
-    );
-  }
-
-  // Double-encoded: env value is a JSON string of the JSON object
-  if (typeof parsed === "string") {
-    try {
-      parsed = parseJsonLenient(parsed);
-    } catch {
-      throw new Error(
-        "FIREBASE_SERVICE_ACCOUNT_JSON est invalide (chaîne JSON doublement encodée).",
-      );
-    }
-  }
-
+function accountFromObject(parsed: unknown, source: string): ServiceAccount {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON est invalide.");
+    throw new Error(`Compte de service invalide (${source}): objet JSON attendu.`);
   }
 
-  const account = parsed as ServiceAccount & { private_key?: string };
+  const account = parsed as ServiceAccount & {
+    private_key?: string;
+    project_id?: string;
+  };
+
   if (typeof account.private_key === "string") {
     account.private_key = normalizePrivateKey(account.private_key);
   }
 
   if (!account.private_key?.includes("BEGIN")) {
     throw new Error(
-      "FIREBASE_SERVICE_ACCOUNT_JSON : private_key manquante ou mal formée (newlines).",
+      `Compte de service invalide (${source}): private_key manquante ou mal formée.`,
     );
   }
 
   return account;
 }
 
+function parseFromBase64(rawInput: string): ServiceAccount {
+  const raw = stripWrappingQuotes(rawInput).replace(/\s+/g, "");
+  let decoded: string;
+  try {
+    decoded = Buffer.from(raw, "base64").toString("utf8").trim();
+  } catch {
+    throw new Error("Compte de service invalide (BASE64): décodage impossible.");
+  }
+
+  if (!decoded.startsWith("{")) {
+    throw new Error(
+      `Compte de service invalide (BASE64): le décodage ne donne pas du JSON (starts=${decoded.slice(0, 8) || "empty"}).`,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseJsonLenient(decoded);
+  } catch (error) {
+    throw new Error(
+      `Compte de service invalide (BASE64): JSON après décodage illisible (${error instanceof Error ? error.message : "parse"}).`,
+    );
+  }
+
+  if (typeof parsed === "string") {
+    parsed = parseJsonLenient(parsed);
+  }
+
+  return accountFromObject(parsed, "BASE64");
+}
+
+function parseFromJsonEnv(rawInput: string): ServiceAccount {
+  let raw = stripWrappingQuotes(rawInput.trim());
+
+  if (!raw.startsWith("{")) {
+    // Accidentally pasted base64 into the JSON variable
+    if (/^[A-Za-z0-9+/=]+$/.test(raw.replace(/\s+/g, ""))) {
+      return parseFromBase64(raw);
+    }
+    throw new Error(
+      "Compte de service invalide (JSON): doit commencer par { ou être du base64.",
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseJsonLenient(raw);
+  } catch (error) {
+    throw new Error(
+      `Compte de service invalide (JSON): ${error instanceof Error ? error.message : "parse"}. Prefer FIREBASE_SERVICE_ACCOUNT_BASE64.`,
+    );
+  }
+
+  if (typeof parsed === "string") {
+    try {
+      parsed = parseJsonLenient(parsed);
+    } catch {
+      throw new Error(
+        "Compte de service invalide (JSON): chaîne JSON doublement encodée.",
+      );
+    }
+  }
+
+  return accountFromObject(parsed, "JSON");
+}
+
 function parseServiceAccount(): ServiceAccount {
   const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
-  // Vercel sometimes wraps or adds whitespace/newlines in env values
-  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64?.trim().replace(
-    /\s+/g,
-    "",
-  );
+  const b64 = (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 ?? "")
+    .trim()
+    .replace(/\s+/g, "");
 
   const errors: string[] = [];
 
-  // Prefer BASE64 — JSON values are often mangled in the Vercel UI.
   if (b64) {
     try {
-      return parseServiceAccountJson(b64);
+      return parseFromBase64(b64);
     } catch (error) {
-      errors.push(
-        `BASE64: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      errors.push(error instanceof Error ? error.message : String(error));
     }
   }
 
   if (json) {
     try {
-      return parseServiceAccountJson(json);
+      return parseFromJsonEnv(json);
     } catch (error) {
-      errors.push(
-        `JSON: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      errors.push(error instanceof Error ? error.message : String(error));
     }
   }
 
+  const diag = envDiagnostics();
+
   if (!b64 && !json) {
     throw new Error(
-      "Configuration serveur incomplète : définissez FIREBASE_SERVICE_ACCOUNT_BASE64 (recommandé) ou FIREBASE_SERVICE_ACCOUNT_JSON sur Vercel, puis redéployez.",
+      `Configuration serveur incomplète: définissez FIREBASE_SERVICE_ACCOUNT_BASE64 pour Production ET Preview, puis redéployez. ${diag}`,
     );
   }
 
   throw new Error(
-    `Compte de service invalide (${b64 ? "BASE64 défini" : "BASE64 absent"}, ${json ? "JSON défini" : "JSON absent"}). ${errors.join(" | ")}`,
+    `Compte de service invalide. ${errors.join(" | ")} — ${diag}`,
   );
 }
 
