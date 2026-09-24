@@ -1,4 +1,7 @@
-import { getAdminAuth } from "@/lib/firebase-admin";
+import {
+  adminConfigErrorMessage,
+  getAdminAuth,
+} from "@/lib/firebase-admin";
 
 export async function requireAdminUid(request: Request): Promise<string> {
   const authorization = request.headers.get("authorization") ?? "";
@@ -18,12 +21,9 @@ export async function requireAdminUid(request: Request): Promise<string> {
     return decoded.uid;
   } catch (error) {
     if (error instanceof AdminApiAuthError) throw error;
-    if (
-      error instanceof Error &&
-      (error.message.startsWith("Configuration serveur") ||
-        error.message.startsWith("FIREBASE_SERVICE_ACCOUNT_JSON"))
-    ) {
-      throw new AdminApiAuthError(error.message, 500);
+    const configMessage = adminConfigErrorMessage(error);
+    if (configMessage) {
+      throw new AdminApiAuthError(configMessage, 500);
     }
     throw new AdminApiAuthError("Session invalide", 401);
   }
