@@ -7,22 +7,35 @@ import {
 } from "@/lib/onboarding";
 import {
   onboardingQuestionTypeLabel,
-  type OnboardingQuestion,
+  type OnboardingAnswers,
+  type QuestionAnswerStats,
+  type QuestionStatsSource,
 } from "@/types/onboarding";
-import type { AppUser } from "@/types/user";
 
 type ResponseStatsProps = {
-  questions: OnboardingQuestion[];
-  users: AppUser[];
+  questions?: QuestionStatsSource[];
+  answerSets?: OnboardingAnswers[];
+  stats?: QuestionAnswerStats[];
+  emptyAnswersLabel?: string;
 };
 
-export function ResponseStats({ questions, users }: ResponseStatsProps) {
-  const stats = useMemo(
-    () => getQuestionAnswerStats(questions, users),
-    [questions, users],
-  );
+export function ResponseStats({
+  questions = [],
+  answerSets,
+  stats: precomputed,
+  emptyAnswersLabel = "Aucune réponse pour calculer des statistiques.",
+}: ResponseStatsProps) {
+  const stats = useMemo(() => {
+    if (precomputed) return precomputed;
+    if (answerSets) return getQuestionAnswerStats(questions, answerSets);
+    return [];
+  }, [precomputed, questions, answerSets]);
 
-  if (questions.length === 0) {
+  const sourceQuestions = precomputed
+    ? precomputed.map((item) => item.question)
+    : questions;
+
+  if (sourceQuestions.length === 0) {
     return (
       <p className="py-16 text-center text-sm text-muted">
         Aucune question pour le moment.
@@ -30,11 +43,13 @@ export function ResponseStats({ questions, users }: ResponseStatsProps) {
     );
   }
 
-  if (users.length === 0) {
+  const hasData = stats.some(
+    (item) => item.total > 0 || item.answered > 0 || item.otherCount > 0,
+  );
+
+  if (!hasData) {
     return (
-      <p className="py-16 text-center text-sm text-muted">
-        Aucun utilisateur pour calculer des statistiques.
-      </p>
+      <p className="py-16 text-center text-sm text-muted">{emptyAnswersLabel}</p>
     );
   }
 

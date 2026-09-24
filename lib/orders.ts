@@ -1,16 +1,27 @@
 import {
   collection,
   doc,
+  documentId,
+  getCountFromServer,
   getDoc,
   getDocs,
   increment,
+  limit,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
+  startAfter,
   Timestamp,
   updateDoc,
   type Firestore,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
+import {
+  DEFAULT_PAGE_SIZE,
+  pageFetchLimit,
+  type CursorPage,
+} from "@/lib/page-query";
 import {
   isOrderStatus,
   type Order,
@@ -22,6 +33,8 @@ import {
 const ORDERS_COLLECTION = "orders";
 const COMMANDES_COLLECTION = "commandes";
 const DELIVERED_POINTS = 10;
+
+let resolvedCollection: OrderCollection | null = null;
 
 function parseString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -104,8 +117,7 @@ function mapFirestoreOrder(
     address: parseString(data.address),
     createdAt: parseTimestamp(data.createdAt),
     date: parseTimestamp(data.date),
-    deliveryService:
-      parseString(data.deliveryService) || parseString(data.deliveryService),
+    deliveryService: parseString(data.deliveryService),
     fullName: parseString(data.fullName),
     items: parseOrderItems(data.items),
     notes: parseString(data.notes),
@@ -115,7 +127,7 @@ function mapFirestoreOrder(
     subtotal: parseNumber(data.subtotal),
     total: parseNumber(data.total),
     updatedAt: parseTimestamp(data.updatedAt),
-    userId: parseString(data.userId) || parseString(data.userId),
+    userId: parseString(data.userId),
   };
 }
 
@@ -125,11 +137,63 @@ function orderTime(order: Order): number {
   return new Date(iso).getTime();
 }
 
-function mapSnapshot(
-  snapshot: Awaited<ReturnType<typeof getDocs>>,
-  collectionName: OrderCollection,
-): Order[] {
-  return snapshot.docs
+async function resolveOrdersCollection(
+  db: Firestore,
+): Promise<OrderCollection> {
+  if (resolvedCollection) return resolvedCollection;
+
+  const ordersProbe = await getDocs(
+    query(collection(db, ORDERS_COLLECTION), limit(1)),
+  );
+  if (!ordersProbe.empty) {
+    resolvedCollection = "orders";
+    return "orders";
+  }
+
+  const commandesProbe = await getDocs(
+    query(collection(db, COMMANDES_COLLECTION), limit(1)),
+  );
+  if (!commandesProbe.empty) {
+    resolvedCollection = "commandes";
+    return "commandes";
+  }
+
+  resolvedCollection = "orders";
+  return "orders";
+}
+
+export async function getOrdersCount(
+  db: Firestore = getFirebaseDb(),
+): Promise<number> {
+  const collectionName = await resolveOrdersCollection(db);
+  const snapshot = await getCountFromServer(collection(db, collectionName));
+  return snapshot.data().count;
+}
+
+export async function getOrdersPage(
+  options: {
+    cursorId?: string | null;
+    pageSize?: number;
+  } = {},
+  db: Firestore = getFirebaseDb(),
+): Promise<CursorPage<Order>> {
+  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+  const collectionName = await resolveOrdersCollection(db);
+  const constraints = [
+    orderBy(documentId()),
+    limit(pageFetchLimit(pageSize)),
+  ];
+
+  if (options.cursorId) {
+    constraints.splice(1, 0, startAfter(options.cursorId));
+  }
+
+  const snapshot = await getDocs(
+    query(collection(db, collectionName), ...constraints),
+  );
+  const hasMore = snapshot.docs.length > pageSize;
+  const pageDocs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;
+  const items = pageDocs
     .map((docSnap) =>
       mapFirestoreOrder(
         docSnap.id,
@@ -138,40 +202,13 @@ function mapSnapshot(
       ),
     )
     .sort((a, b) => orderTime(b) - orderTime(a));
-}
 
-export async function getOrders(
-  db: Firestore = getFirebaseDb(),
-): Promise<Order[]> {
-  const [ordersResult, commandesResult] = await Promise.allSettled([
-    getDocs(collection(db, ORDERS_COLLECTION)),
-    getDocs(collection(db, COMMANDES_COLLECTION)),
-  ]);
-
-  if (ordersResult.status === "fulfilled" && !ordersResult.value.empty) {
-    return mapSnapshot(ordersResult.value, "orders");
-  }
-
-  if (commandesResult.status === "fulfilled" && !commandesResult.value.empty) {
-    return mapSnapshot(commandesResult.value, "commandes");
-  }
-
-  if (
-    ordersResult.status === "rejected" &&
-    commandesResult.status === "rejected"
-  ) {
-    throw ordersResult.reason;
-  }
-
-  if (ordersResult.status === "fulfilled") {
-    return mapSnapshot(ordersResult.value, "orders");
-  }
-
-  if (commandesResult.status === "fulfilled") {
-    return mapSnapshot(commandesResult.value, "commandes");
-  }
-
-  return [];
+  const last = pageDocs[pageDocs.length - 1];
+  return {
+    items,
+    nextCursorId: hasMore && last ? last.id : null,
+    hasMore,
+  };
 }
 
 export async function updateOrderStatus(
@@ -200,11 +237,7 @@ export async function updateOrderStatus(
     updatedAt: serverTimestamp(),
   });
 
-  if (
-    status === "delivered" &&
-    previousStatus !== "delivered" &&
-    userId
-  ) {
+  if (status === "delivered" && previousStatus !== "delivered" && userId) {
     try {
       await awardDeliveryPoints(db, docId, userId);
     } catch {

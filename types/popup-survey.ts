@@ -9,6 +9,9 @@ export type PopupSurveyQuestion = {
   required: boolean;
 };
 
+/** Anonymous aggregates written by the mobile app on the survey doc. */
+export type PopupSurveyStats = Record<string, unknown>;
+
 export type PopupSurvey = {
   id: string;
   title: string;
@@ -16,6 +19,8 @@ export type PopupSurvey = {
   active: boolean;
   order: number;
   questions: PopupSurveyQuestion[];
+  stats: PopupSurveyStats | null;
+  statsUpdatedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };

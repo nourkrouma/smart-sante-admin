@@ -1,20 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { ListSearch } from "@/components/list-search";
 import type { Product } from "@/types/product";
-import { PRODUCT_CATEGORY_LABELS } from "@/types/product";
 import { formatPrice } from "@/lib/products";
 import { ProductDetailPanel } from "@/components/products/product-detail-panel";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { DeleteProductDialog } from "@/components/products/delete-product-dialog";
 
-const PAGE_SIZE = 10;
-
 type ProductListProps = {
   products: Product[];
+  pageIndex: number;
+  hasMore: boolean;
+  loading?: boolean;
+  emptyMessage?: string;
+  resultCount?: number;
+  draftQuery: string;
+  onDraftQueryChange: (value: string) => void;
+  onSearchSubmit: (value: string) => void;
+  onPrev: () => void;
+  onNext: () => void;
+  onMutated?: () => void;
 };
 
 type ProductThumbProps = {
@@ -53,50 +61,30 @@ function ProductThumb({ src, alt, sizes, className = "" }: ProductThumbProps) {
   );
 }
 
-export function ProductList({ products }: ProductListProps) {
+export function ProductList({
+  products,
+  pageIndex,
+  hasMore,
+  loading = false,
+  emptyMessage,
+  resultCount,
+  draftQuery,
+  onDraftQueryChange,
+  onSearchSubmit,
+  onPrev,
+  onNext,
+  onMutated,
+}: ProductListProps) {
   const [selected, setSelected] = useState<Product | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState<Product | null>(null);
-  const [page, setPage] = useState(1);
-  const [query, setQuery] = useState("");
-
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return products;
-
-    return products.filter((product) => {
-      const haystack = [
-        product.id,
-        product.name,
-        product.category,
-        PRODUCT_CATEGORY_LABELS[product.category],
-        ...product.tags,
-        ...product.sizes,
-        ...product.colors.map((color) => color.value),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(needle);
-    });
-  }, [products, query]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const startIndex = (safePage - 1) * PAGE_SIZE;
-  const pageProducts = filtered.slice(startIndex, startIndex + PAGE_SIZE);
-  const rangeStart = filtered.length === 0 ? 0 : startIndex + 1;
-  const rangeEnd = Math.min(startIndex + PAGE_SIZE, filtered.length);
 
   useEffect(() => {
     if (!selected) return;
     const fresh = products.find((product) => product.id === selected.id);
     setSelected(fresh ?? null);
   }, [products, selected?.id]);
-
-  useEffect(() => {
-    setPage((current) => Math.min(current, totalPages));
-  }, [totalPages]);
 
   function openCreate() {
     setEditing(null);
@@ -115,15 +103,14 @@ export function ProductList({ products }: ProductListProps) {
 
   return (
     <>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
         <ListSearch
           label="Rechercher des produits"
-          value={query}
-          onChange={(value) => {
-            setQuery(value);
-            setPage(1);
-          }}
+          value={draftQuery}
+          onChange={onDraftQueryChange}
+          onSubmit={onSearchSubmit}
           placeholder="Rechercher par nom, tags, catégorie…"
+          disabled={loading && products.length === 0}
         />
         <button
           type="button"
@@ -135,166 +122,168 @@ export function ProductList({ products }: ProductListProps) {
         </button>
       </div>
 
-      {filtered.length === 0 ? (
+      {products.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted">
-          {products.length === 0
-            ? "Aucun produit pour le moment."
-            : "Aucun produit ne correspond à votre recherche."}
+          {emptyMessage ??
+            (draftQuery.trim()
+              ? "Aucun produit ne correspond à votre recherche."
+              : "Aucun produit pour le moment.")}
         </p>
       ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
-                  <th className="px-5 py-3.5 font-medium">Image</th>
-                  <th className="px-5 py-3.5 font-medium">Nom</th>
-                  <th className="px-5 py-3.5 font-medium">Prix</th>
-                  <th className="px-5 py-3.5 font-medium">Tags</th>
-                  <th className="px-5 py-3.5 font-medium">Galerie</th>
-                  <th className="px-5 py-3.5 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageProducts.map((product) => {
-                  const isSelected = selected?.id === product.id;
-                  return (
-                    <tr
-                      key={product.id}
-                      tabIndex={0}
-                      onClick={() => setSelected(product)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          setSelected(product);
-                        }
-                      }}
-                      className={`cursor-pointer border-b border-border last:border-0 transition-colors ${
-                        isSelected ? "bg-brand/5" : "hover:bg-background/80"
-                      }`}
-                    >
-                      <td className="px-5 py-4">
-                        <div className="size-14 overflow-hidden rounded-md">
-                          {product.images[0] ? (
-                            <ProductThumb
-                              src={product.images[0]}
-                              alt={product.name}
-                              sizes="56px"
-                              className="size-14"
-                            />
-                          ) : (
-                            <div className="flex size-14 items-center justify-center bg-background text-xs text-muted">
-                              —
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 font-medium text-foreground">
-                        {product.name}
-                      </td>
-                      <td className="px-5 py-4 tabular-nums text-muted">
-                        {formatPrice(product.price)}
-                      </td>
-                      <td className="px-5 py-4">
-                        {product.tags.length === 0 ? (
-                          <span className="text-muted">—</span>
+        <div
+          className={`overflow-x-auto rounded-lg border border-border bg-surface ${
+            loading ? "opacity-60" : ""
+          }`}
+        >
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
+                <th className="px-5 py-3.5 font-medium">Image</th>
+                <th className="px-5 py-3.5 font-medium">Nom</th>
+                <th className="px-5 py-3.5 font-medium">Prix</th>
+                <th className="px-5 py-3.5 font-medium">Tags</th>
+                <th className="px-5 py-3.5 font-medium">Galerie</th>
+                <th className="px-5 py-3.5 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map((product) => {
+                const isSelected = selected?.id === product.id;
+                return (
+                  <tr
+                    key={product.id}
+                    tabIndex={0}
+                    onClick={() => setSelected(product)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelected(product);
+                      }
+                    }}
+                    className={`cursor-pointer border-b border-border last:border-0 transition-colors ${
+                      isSelected ? "bg-brand/5" : "hover:bg-background/80"
+                    }`}
+                  >
+                    <td className="px-5 py-4">
+                      <div className="size-14 overflow-hidden rounded-md">
+                        {product.images[0] ? (
+                          <ProductThumb
+                            src={product.images[0]}
+                            alt={product.name}
+                            sizes="56px"
+                            className="size-14"
+                          />
                         ) : (
-                          <div className="flex max-w-56 flex-wrap gap-1">
-                            {product.tags.slice(0, 3).map((tag) => (
-                              <span
-                                key={`${product.id}-tag-${tag}`}
-                                className="rounded-md bg-background px-1.5 py-0.5 text-xs text-foreground ring-1 ring-border"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                            {product.tags.length > 3 ? (
-                              <span className="text-xs text-muted">
-                                +{product.tags.length - 3}
-                              </span>
-                            ) : null}
+                          <div className="flex size-14 items-center justify-center bg-background text-xs text-muted">
+                            —
                           </div>
                         )}
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-1.5">
-                          {product.images.slice(0, 4).map((src, index) => (
-                            <ProductThumb
-                              key={`${product.id}-${index}`}
-                              src={src}
-                              alt={`${product.name} ${index + 1}`}
-                              sizes="36px"
-                              className="size-9 rounded ring-1 ring-border"
-                            />
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 font-medium text-foreground">
+                      {product.name}
+                    </td>
+                    <td className="px-5 py-4 tabular-nums text-muted">
+                      {formatPrice(product.price)}
+                    </td>
+                    <td className="px-5 py-4">
+                      {product.tags.length === 0 ? (
+                        <span className="text-muted">—</span>
+                      ) : (
+                        <div className="flex max-w-56 flex-wrap gap-1">
+                          {product.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={`${product.id}-tag-${tag}`}
+                              className="rounded-md bg-background px-1.5 py-0.5 text-xs text-foreground ring-1 ring-border"
+                            >
+                              {tag}
+                            </span>
                           ))}
-                          <span className="ml-1 text-xs text-muted">
-                            {product.images.length}
-                          </span>
+                          {product.tags.length > 3 ? (
+                            <span className="text-xs text-muted">
+                              +{product.tags.length - 3}
+                            </span>
+                          ) : null}
                         </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div
-                          className="flex items-center justify-end gap-1"
-                          onClick={(event) => event.stopPropagation()}
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-1.5">
+                        {product.images.slice(0, 4).map((src, index) => (
+                          <ProductThumb
+                            key={`${product.id}-${index}`}
+                            src={src}
+                            alt={`${product.name} ${index + 1}`}
+                            sizes="36px"
+                            className="size-9 rounded ring-1 ring-border"
+                          />
+                        ))}
+                        <span className="ml-1 text-xs text-muted">
+                          {product.images.length}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div
+                        className="flex items-center justify-end gap-1"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => openDelete(product)}
+                          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50"
+                          aria-label={`Supprimer ${product.name}`}
                         >
-                          <button
-                            type="button"
-                            onClick={() => openDelete(product)}
-                            className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50"
-                            aria-label={`Supprimer ${product.name}`}
-                          >
-                            <Trash2 size={14} strokeWidth={1.75} />
-                            Supprimer
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
-            <p className="text-sm text-muted">
-              Affichage{" "}
-              <span className="font-medium text-foreground">
-                {rangeStart}–{rangeEnd}
-              </span>{" "}
-              sur{" "}
-              <span className="font-medium text-foreground">
-                {filtered.length}
-              </span>
-            </p>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-                disabled={safePage <= 1}
-                className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <ChevronLeft size={16} strokeWidth={2} />
-                Précédent
-              </button>
-              <span className="min-w-24 text-center text-sm tabular-nums text-muted">
-                Page {safePage} sur {totalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setPage((current) => Math.min(totalPages, current + 1))
-                }
-                disabled={safePage >= totalPages}
-                className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Suivant
-                <ChevronRight size={16} strokeWidth={2} />
-              </button>
-            </div>
-          </div>
-        </>
+                          <Trash2 size={14} strokeWidth={1.75} />
+                          Supprimer
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <div className="mt-4 flex flex-col items-center justify-between gap-3 sm:flex-row">
+        <p className="text-sm text-muted">
+          Page{" "}
+          <span className="font-medium text-foreground">{pageIndex + 1}</span>
+          {" · "}
+          <span className="font-medium text-foreground">{products.length}</span>{" "}
+          sur cette page
+          {resultCount != null ? (
+            <>
+              {" · "}
+              <span className="font-medium text-foreground">{resultCount}</span>{" "}
+              au total
+            </>
+          ) : null}
+        </p>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={pageIndex <= 0 || loading}
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ChevronLeft size={16} strokeWidth={2} />
+            Précédent
+          </button>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={!hasMore || loading}
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Suivant
+            <ChevronRight size={16} strokeWidth={2} />
+          </button>
+        </div>
+      </div>
 
       <ProductDetailPanel
         product={selected}
@@ -310,11 +299,13 @@ export function ProductList({ products }: ProductListProps) {
           setFormOpen(false);
           setEditing(null);
         }}
+        onSaved={onMutated}
       />
 
       <DeleteProductDialog
         product={deleting}
         onClose={() => setDeleting(null)}
+        onDeleted={onMutated}
       />
     </>
   );

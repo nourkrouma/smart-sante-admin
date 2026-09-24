@@ -43,8 +43,17 @@ export type OptionAnswerStat = {
   count: number;
 };
 
+export type QuestionStatsSource = {
+  id: string;
+  title: string;
+  type: OnboardingQuestionType;
+  options: string[];
+  order: number;
+  required: boolean;
+};
+
 export type QuestionAnswerStats = {
-  question: OnboardingQuestion;
+  question: QuestionStatsSource;
   total: number;
   answered: number;
   skipped: number;

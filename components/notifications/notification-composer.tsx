@@ -1,71 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { Bell } from "lucide-react";
 import { sendPushNotification } from "@/lib/send-push-notification";
-import {
-  ALL_USERS_TOPIC,
-  type NotificationAudience,
-} from "@/lib/notifications";
-import { getUsers, userDisplayName } from "@/lib/users";
-import type { AppUser } from "@/types/user";
+import { ALL_USERS_TOPIC } from "@/lib/notifications";
 
 export function NotificationComposer() {
-  const [users, setUsers] = useState<AppUser[]>([]);
-  const [usersError, setUsersError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [audience, setAudience] = useState<NotificationAudience>("all");
-  const [userId, setUserId] = useState("");
-  const [userQuery, setUserQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    let cancelled = false;
-
-    getUsers()
-      .then((data) => {
-        if (!cancelled) setUsers(data);
-      })
-      .catch((loadError) => {
-        if (cancelled) return;
-        setUsersError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Impossible de charger les utilisateurs",
-        );
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const filteredUsers = useMemo(() => {
-    const needle = userQuery.trim().toLowerCase();
-    if (!needle) return users.slice(0, 20);
-
-    return users
-      .filter((user) => {
-        const haystack = [user.id, user.fullName, user.email, user.phone]
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(needle);
-      })
-      .slice(0, 20);
-  }, [users, userQuery]);
-
-  const selectedUser = users.find((user) => user.id === userId) ?? null;
-  const userOptions = useMemo(() => {
-    if (!selectedUser) return filteredUsers;
-    if (filteredUsers.some((user) => user.id === selectedUser.id)) {
-      return filteredUsers;
-    }
-    return [selectedUser, ...filteredUsers];
-  }, [filteredUsers, selectedUser]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -78,8 +24,6 @@ export function NotificationComposer() {
           title,
           body,
           imageUrl,
-          audience,
-          userId,
         });
         setNotice(result.message);
       } catch (mutationError) {
@@ -99,18 +43,10 @@ export function NotificationComposer() {
           Notifications
         </h1>
         <p className="mt-1 text-sm text-muted">
-          Envoi via Firebase Cloud Messaging. L’application mobile doit
-          s’abonner au sujet{" "}
-          <code className="font-medium">{ALL_USERS_TOPIC}</code> et à{" "}
-          <code className="font-medium">{`user_{uid}`}</code>.
+          Envoi via Firebase Cloud Messaging à tous les utilisateurs (sujet{" "}
+          <code className="font-medium">{ALL_USERS_TOPIC}</code>).
         </p>
       </header>
-
-      {usersError ? (
-        <p className="mb-4 text-sm text-red-700" role="alert">
-          {usersError}
-        </p>
-      ) : null}
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <form
@@ -163,67 +99,6 @@ export function NotificationComposer() {
             />
           </label>
 
-          <fieldset className="space-y-2">
-            <legend className="text-xs font-medium uppercase tracking-wide text-muted">
-              Audience
-            </legend>
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="audience"
-                checked={audience === "all"}
-                onChange={() => setAudience("all")}
-                disabled={isPending}
-                className="accent-brand"
-              />
-              Tous les utilisateurs
-            </label>
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="audience"
-                checked={audience === "user"}
-                onChange={() => setAudience("user")}
-                disabled={isPending}
-                className="accent-brand"
-              />
-              Un utilisateur
-            </label>
-          </fieldset>
-
-          {audience === "user" ? (
-            <div className="space-y-2">
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Rechercher un utilisateur
-                </span>
-                <input
-                  type="search"
-                  value={userQuery}
-                  onChange={(event) => setUserQuery(event.target.value)}
-                  disabled={isPending}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-                  placeholder="Nom, e-mail, téléphone…"
-                />
-              </label>
-              <select
-                value={userId}
-                onChange={(event) => setUserId(event.target.value)}
-                required={audience === "user"}
-                disabled={isPending}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              >
-                <option value="">Sélectionner…</option>
-                {userOptions.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {userDisplayName(user)}
-                    {user.email ? ` · ${user.email}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
           {error ? (
             <p className="text-sm text-red-700" role="alert">
               {error}
@@ -274,11 +149,7 @@ export function NotificationComposer() {
             </div>
           </div>
           <p className="mt-3 text-xs text-muted">
-            {audience === "all"
-              ? `Destinataires : tous les utilisateurs (sujet ${ALL_USERS_TOPIC})`
-              : selectedUser
-                ? `Destinataire : ${userDisplayName(selectedUser)} (sujet user_${selectedUser.id})`
-                : "Destinataire : un utilisateur à sélectionner"}
+            Destinataires : tous les utilisateurs (sujet {ALL_USERS_TOPIC})
           </p>
         </aside>
       </div>

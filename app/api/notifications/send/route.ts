@@ -2,8 +2,8 @@ import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb, getAdminMessaging } from "@/lib/firebase-admin";
 import {
+  ALL_USERS_TOPIC,
   normalizePushNotification,
-  pushNotificationTopic,
   type PushNotificationInput,
 } from "@/lib/notifications";
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const topic = pushNotificationTopic(input.audience, input.userId);
+  const topic = ALL_USERS_TOPIC;
   const imageUrl = input.imageUrl;
 
   try {
@@ -84,10 +84,20 @@ export async function POST(request: Request) {
         body: input.body,
         ...(imageUrl ? { imageUrl } : {}),
       },
-      android: imageUrl
-        ? { notification: { imageUrl } }
-        : undefined,
+      data: {
+        title: input.title,
+        body: input.body,
+        ...(imageUrl ? { imageUrl } : {}),
+        audience: "all",
+      },
+      android: {
+        priority: "high",
+        ...(imageUrl ? { notification: { imageUrl } } : {}),
+      },
       apns: {
+        headers: {
+          "apns-priority": "10",
+        },
         payload: {
           aps: {
             sound: "default",
@@ -102,8 +112,8 @@ export async function POST(request: Request) {
         title: input.title,
         body: input.body,
         imageUrl: imageUrl ?? null,
-        audience: input.audience,
-        userId: input.userId ?? null,
+        audience: "all",
+        userId: null,
         topic,
         messageId,
         sentBy: uid,
@@ -117,10 +127,7 @@ export async function POST(request: Request) {
       sent: true,
       messageId,
       topic,
-      message:
-        input.audience === "all"
-          ? "Notification envoyée au sujet all_users."
-          : `Notification envoyée au sujet user_${input.userId}.`,
+      message: "Notification envoyée au sujet all_users.",
     });
   } catch (error) {
     const code =

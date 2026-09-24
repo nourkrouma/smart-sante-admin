@@ -9,9 +9,8 @@ import {
   getOnboardingQuestions,
   updateOnboardingQuestion,
 } from "@/lib/onboarding";
-import { getUsers } from "@/lib/users";
-import type { OnboardingQuestion } from "@/types/onboarding";
-import type { AppUser } from "@/types/user";
+import { getOnboardingAnswerSets } from "@/lib/users";
+import type { OnboardingAnswers, OnboardingQuestion } from "@/types/onboarding";
 
 type OnboardingTab = "questions" | "stats";
 
@@ -24,17 +23,20 @@ function sortQuestions(questions: OnboardingQuestion[]) {
 export function OnboardingView() {
   const [tab, setTab] = useState<OnboardingTab>("questions");
   const [questions, setQuestions] = useState<OnboardingQuestion[] | null>(null);
-  const [users, setUsers] = useState<AppUser[] | null>(null);
+  const [answerSets, setAnswerSets] = useState<OnboardingAnswers[] | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([getOnboardingQuestions(), getUsers()])
-      .then(([loadedQuestions, loadedUsers]) => {
+    getOnboardingQuestions()
+      .then((loadedQuestions) => {
         if (cancelled) return;
         setQuestions(loadedQuestions);
-        setUsers(loadedUsers);
       })
       .catch((loadError) => {
         if (cancelled) return;
@@ -44,13 +46,42 @@ export function OnboardingView() {
             : "Impossible de charger l’onboarding",
         );
         setQuestions([]);
-        setUsers([]);
       });
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (tab !== "stats" || answerSets !== null) return;
+
+    let cancelled = false;
+    setStatsLoading(true);
+    setStatsError(null);
+
+    getOnboardingAnswerSets()
+      .then((sets) => {
+        if (cancelled) return;
+        setAnswerSets(sets);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setStatsError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Impossible de charger les statistiques",
+        );
+        setAnswerSets([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStatsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, answerSets]);
 
   function handleQuestionCreated(question: OnboardingQuestion) {
     setQuestions((current) =>
@@ -77,8 +108,6 @@ export function OnboardingView() {
       current ? current.filter((item) => item.id !== id) : current,
     );
   }
-
-  const loaded = questions !== null && users !== null;
 
   return (
     <>
@@ -119,31 +148,7 @@ export function OnboardingView() {
         </p>
       ) : null}
 
-      {loaded ? (
-        tab === "questions" ? (
-          <QuestionsList
-            questions={questions}
-            onSubmit={(id, input) => {
-              const payload = {
-                title: input.title,
-                type: input.type,
-                options: input.options,
-                order: input.order,
-                required: input.required,
-              };
-              return id
-                ? updateOnboardingQuestion(id, payload)
-                : createOnboardingQuestion(payload);
-            }}
-            onDelete={deleteOnboardingQuestion}
-            onCreated={handleQuestionCreated}
-            onUpdated={handleQuestionUpdated}
-            onDeleted={handleQuestionDeleted}
-          />
-        ) : (
-          <ResponseStats questions={questions} users={users} />
-        )
-      ) : (
+      {questions === null ? (
         <div className="overflow-hidden rounded-lg border border-border bg-surface">
           <div className="flex items-center justify-center gap-2 border-b border-border px-5 py-8 text-sm text-muted">
             <span
@@ -153,6 +158,49 @@ export function OnboardingView() {
             Chargement de l’onboarding…
           </div>
         </div>
+      ) : tab === "questions" ? (
+        <QuestionsList
+          questions={questions}
+          onSubmit={(id, input) => {
+            const payload = {
+              title: input.title,
+              type: input.type,
+              options: input.options,
+              order: input.order,
+              required: input.required,
+            };
+            return id
+              ? updateOnboardingQuestion(id, payload)
+              : createOnboardingQuestion(payload);
+          }}
+          onDelete={deleteOnboardingQuestion}
+          onCreated={handleQuestionCreated}
+          onUpdated={handleQuestionUpdated}
+          onDeleted={handleQuestionDeleted}
+        />
+      ) : statsLoading || answerSets === null ? (
+        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+          <div className="flex items-center justify-center gap-2 border-b border-border px-5 py-8 text-sm text-muted">
+            <span
+              className="size-4 animate-spin rounded-full border-2 border-border border-t-brand"
+              aria-hidden
+            />
+            Chargement des statistiques…
+          </div>
+        </div>
+      ) : (
+        <>
+          {statsError ? (
+            <p className="mb-4 text-sm text-red-700" role="alert">
+              {statsError}
+            </p>
+          ) : null}
+          <ResponseStats
+            questions={questions}
+            answerSets={answerSets}
+            emptyAnswersLabel="Aucun utilisateur pour calculer des statistiques."
+          />
+        </>
       )}
     </>
   );

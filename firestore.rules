@@ -55,18 +55,14 @@ service cloud.firestore {
         && isStatusOnlyUpdate();
     }
 
-    function isNonNegativeInt(value) {
-      return value is int && value >= 0
-        || value is float && value >= 0 && value % 1 == 0;
-    }
-
-    function isValidQuestionFields(questionId, requireActive) {
+    function isValidOnboardingQuestion(questionId) {
       let data = request.resource.data;
       return data.id == questionId
         && data.title is string
         && data.title.size() > 0
         && data.type in ['single', 'multiple', 'text']
-        && isNonNegativeInt(data.order)
+        && data.order is int
+        && data.order >= 0
         && data.required is bool
         && data.options is list
         && (
@@ -75,65 +71,59 @@ service cloud.firestore {
             (data.type == 'single' || data.type == 'multiple')
             && data.options.size() >= 2
           )
-        )
-        && (!requireActive || data.active is bool);
+        );
     }
 
-    function isValidPopupSurvey(surveyId) {
+    function isValidPopupSurveyQuestion(question) {
+      return question.id is string
+        && question.id.size() > 0
+        && question.title is string
+        && question.title.size() > 0
+        && question.type in ['single', 'multiple', 'text']
+        && question.order is number
+        && question.order >= 0
+        && question.required is bool
+        && question.options is list
+        && (
+          (question.type == 'text' && question.options.size() == 0)
+          || (
+            (question.type == 'single' || question.type == 'multiple')
+            && question.options.size() >= 2
+          )
+        );
+    }
+
+    function isValidPopupSurvey() {
       let data = request.resource.data;
-      return data.id == surveyId
+      return data.id is string
+        && data.id.size() > 0
         && data.title is string
         && data.title.size() > 0
         && data.title.size() <= 200
         && data.description is string
         && data.description.size() <= 1000
         && data.active is bool
-        && isNonNegativeInt(data.order)
+        && data.order is number
+        && data.order >= 0
         && data.questions is list
-        && data.questions.size() <= 40;
+        && data.questions.size() <= 40
+        && (data.questions.size() == 0 || isValidPopupSurveyQuestion(data.questions[0]));
     }
 
-    function isValidPopupSurveyAnswer(answerId) {
+    function isValidPopupSurveyCompletion(completionId) {
       let data = request.resource.data;
       return data.uid == request.auth.uid
         && data.surveyId is string
         && data.surveyId.size() > 0
-        && answerId == request.auth.uid + '_' + data.surveyId
-        && exists(/databases/$(database)/documents/popupSurveys/$(data.surveyId))
-        && data.answers is map
+        && completionId == request.auth.uid + '_' + data.surveyId
         && data.answeredAt == request.time
-        && data.keys().hasOnly([
-          'uid',
-          'surveyId',
-          'answers',
-          'answeredAt'
-        ]);
+        && data.keys().hasOnly(['uid', 'surveyId', 'answeredAt']);
     }
 
-    function isValidPopupAnswer(answerId) {
-      let data = request.resource.data;
-      return data.uid == request.auth.uid
-        && data.questionId is string
-        && data.questionId.size() > 0
-        && answerId == request.auth.uid + '_' + data.questionId
-        && exists(/databases/$(database)/documents/popupQuestions/$(data.questionId))
-        && data.type in ['single', 'multiple', 'text']
-        && data.values is list
-        && data.values.size() > 0
-        && data.values.size() <= 50
-        && data.values[0] is string
-        && (
-          (data.type in ['single', 'text'] && data.values.size() == 1)
-          || data.type == 'multiple'
-        )
-        && data.answeredAt == request.time
-        && data.keys().hasOnly([
-          'uid',
-          'questionId',
-          'type',
-          'values',
-          'answeredAt'
-        ]);
+    // Clients may only bump anonymous aggregates on a survey.
+    function isPopupSurveyStatsOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['stats', 'statsUpdatedAt']);
     }
 
     function authEmail() {
@@ -166,7 +156,7 @@ service cloud.firestore {
             .hasOnly(['status', 'respondedAt']);
     }
 
-    function isValidPointEventCreate() {
+    function isValidPointEventCreate(eventId) {
       let data = request.resource.data;
       return data.uid is string
         && data.type in ['order_placed', 'order_delivered', 'referral']
@@ -236,7 +226,7 @@ service cloud.firestore {
           || resource.data.uid == request.auth.uid
           || isAdmin());
       allow list: if isAdmin();
-      allow create: if isValidPointEventCreate()
+      allow create: if isValidPointEventCreate(eventId)
         && (
           (isOwner(request.resource.data.uid)
             && request.resource.data.type == 'order_placed'
@@ -257,38 +247,27 @@ service cloud.firestore {
 
     match /onboardingQuestions/{questionId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() && isValidQuestionFields(questionId, false);
-      allow delete: if isAdmin();
-    }
-
-    match /popupQuestions/{questionId} {
-      allow read: if isSignedIn();
-      allow create, update: if isAdmin() && isValidQuestionFields(questionId, true);
+      allow create, update: if isAdmin() && isValidOnboardingQuestion(questionId);
       allow delete: if isAdmin();
     }
 
     match /popupSurveys/{surveyId} {
       allow read: if isSignedIn();
-      allow create, update: if isAdmin() && isValidPopupSurvey(surveyId);
+      allow create: if isAdmin()
+        && request.resource.data.id == surveyId
+        && isValidPopupSurvey();
+      allow update: if (isAdmin()
+          && request.resource.data.id == surveyId
+          && isValidPopupSurvey())
+        || (isSignedIn() && isPopupSurveyStatsOnlyUpdate());
       allow delete: if isAdmin();
     }
 
-    match /popupAnswers/{answerId} {
+    match /popupSurveyCompletions/{completionId} {
       allow read: if isSignedIn()
         && (resource.data.uid == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidPopupAnswer(answerId);
+      allow create: if isSignedIn() && isValidPopupSurveyCompletion(completionId);
       allow update, delete: if false;
-    }
-
-    match /popupSurveyAnswers/{answerId} {
-      allow read: if isSignedIn()
-        && (resource.data.uid == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && isValidPopupSurveyAnswer(answerId);
-      allow update, delete: if false;
-    }
-
-    match /notificationLogs/{logId} {
-      allow read, write: if isAdmin();
     }
 
     match /referral_codes/{code} {

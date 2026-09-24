@@ -34,7 +34,18 @@ const KINDS: {
 
 export function FormulairesView() {
   const [kind, setKind] = useState<FormKind>("onboarding");
+  const [visited, setVisited] = useState<Record<FormKind, boolean>>({
+    onboarding: true,
+    popup: false,
+  });
   const current = KINDS.find((item) => item.id === kind) ?? KINDS[0];
+
+  function selectKind(next: FormKind) {
+    setKind(next);
+    setVisited((currentVisited) =>
+      currentVisited[next] ? currentVisited : { ...currentVisited, [next]: true },
+    );
+  }
 
   return (
     <div className="w-full px-4 py-8 sm:px-8 sm:py-10">
@@ -62,7 +73,7 @@ export function FormulairesView() {
               type="button"
               role="tab"
               aria-selected={selected}
-              onClick={() => setKind(item.id)}
+              onClick={() => selectKind(item.id)}
               className={`rounded-xl border p-4 text-left transition-colors ${
                 selected
                   ? "border-brand bg-brand/5 ring-2 ring-brand/30"
@@ -111,7 +122,16 @@ export function FormulairesView() {
             {current.label}
           </h2>
         </div>
-        {kind === "onboarding" ? <OnboardingView /> : <PopupSurveysView />}
+        {visited.onboarding ? (
+          <div className={kind === "onboarding" ? undefined : "hidden"}>
+            <OnboardingView />
+          </div>
+        ) : null}
+        {visited.popup ? (
+          <div className={kind === "popup" ? undefined : "hidden"}>
+            <PopupSurveysView />
+          </div>
+        ) : null}
       </section>
     </div>
   );

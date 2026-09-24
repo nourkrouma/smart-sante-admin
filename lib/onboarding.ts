@@ -17,6 +17,7 @@ import {
   type OnboardingQuestion,
   type OnboardingQuestionType,
   type QuestionAnswerStats,
+  type QuestionStatsSource,
 } from "@/types/onboarding";
 
 const QUESTIONS_COLLECTION = "onboardingQuestions";
@@ -274,10 +275,10 @@ function selectedChoices(value: OnboardingAnswerValue | undefined): string[] {
 }
 
 export function getQuestionAnswerStats(
-  questions: OnboardingQuestion[],
-  users: { onboardingAnswers: OnboardingAnswers }[],
+  questions: QuestionStatsSource[],
+  answerSets: OnboardingAnswers[],
 ): QuestionAnswerStats[] {
-  const total = users.length;
+  const total = answerSets.length;
 
   return questions.map((question) => {
     const counts = new Map<string, number>();
@@ -288,8 +289,8 @@ export function getQuestionAnswerStats(
     let answered = 0;
     let otherCount = 0;
 
-    for (const user of users) {
-      const choices = selectedChoices(user.onboardingAnswers[question.id]);
+    for (const answers of answerSets) {
+      const choices = selectedChoices(answers[question.id]);
       if (choices.length === 0) continue;
       answered += 1;
 

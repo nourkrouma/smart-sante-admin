@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ListChecks,
@@ -9,8 +9,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { QuestionsList } from "@/components/onboarding/questions-list";
+import { ResponseStats } from "@/components/onboarding/response-stats";
 import { DeleteQuestionDialog } from "@/components/onboarding/delete-question-dialog";
 import { SurveyFormDialog } from "@/components/formulaires/survey-form-dialog";
+import { getPopupSurveyStats } from "@/lib/popup-survey-stats";
 import {
   createPopupSurvey,
   deletePopupSurvey,
@@ -20,6 +22,8 @@ import {
   updatePopupSurvey,
 } from "@/lib/popup-surveys";
 import type { PopupSurvey, PopupSurveyQuestion } from "@/types/popup-survey";
+
+type SurveyDetailTab = "questions" | "stats";
 
 function sortSurveys(surveys: PopupSurvey[]) {
   return [...surveys].sort(
@@ -38,6 +42,7 @@ export function PopupSurveysView() {
   const [editing, setEditing] = useState<PopupSurvey | null>(null);
   const [deleting, setDeleting] = useState<PopupSurvey | null>(null);
   const [openSurveyId, setOpenSurveyId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<SurveyDetailTab>("questions");
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +71,14 @@ export function PopupSurveysView() {
       ? (surveys.find((survey) => survey.id === openSurveyId) ?? null)
       : null;
 
+  const surveyStats = useMemo(
+    () =>
+      openSurvey
+        ? getPopupSurveyStats(openSurvey.questions, openSurvey.stats)
+        : null,
+    [openSurvey],
+  );
+
   function rememberSurvey(survey: PopupSurvey) {
     setSurveys((current) =>
       current
@@ -73,7 +86,14 @@ export function PopupSurveysView() {
             current.some((item) => item.id === survey.id)
               ? current.map((item) =>
                   item.id === survey.id
-                    ? { ...survey, createdAt: item.createdAt }
+                    ? {
+                        ...survey,
+                        createdAt: item.createdAt,
+                        // Preserve aggregates written by the app.
+                        stats: survey.stats ?? item.stats,
+                        statsUpdatedAt:
+                          survey.statsUpdatedAt ?? item.statsUpdatedAt,
+                      }
                     : item,
                 )
               : [...current, survey],
@@ -114,7 +134,10 @@ export function PopupSurveysView() {
       <div>
         <button
           type="button"
-          onClick={() => setOpenSurveyId(null)}
+          onClick={() => {
+            setOpenSurveyId(null);
+            setDetailTab("questions");
+          }}
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
         >
           <ArrowLeft size={16} strokeWidth={2} />
@@ -146,58 +169,99 @@ export function PopupSurveysView() {
           </div>
         </div>
 
+        <div
+          role="tablist"
+          aria-label="Sections enquête"
+          className="mb-6 flex gap-5 border-b border-border"
+        >
+          {(
+            [
+              { id: "questions", label: "Questions" },
+              { id: "stats", label: "Statistiques" },
+            ] as const
+          ).map((item) => {
+            const selected = detailTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setDetailTab(item.id)}
+                className={`-mb-px border-b-2 px-0.5 pb-2 text-sm font-medium transition-colors ${
+                  selected
+                    ? "border-brand text-foreground"
+                    : "border-transparent text-muted hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+
         {error ? (
           <p className="mb-4 text-sm text-red-700" role="alert">
             {error}
           </p>
         ) : null}
 
-        <QuestionsList
-          key={openSurvey.id}
-          questions={openSurvey.questions}
-          emptyLabel="Ajoutez des questions à cette enquête. L’application les affichera ensemble."
-          deleteDescription={(question) => (
-            <>
-              Cette question sera retirée de{" "}
-              <span className="font-medium text-foreground">
-                {openSurvey.title}
-              </span>
-              {" : "}
-              <span className="font-medium text-foreground">{question.title}</span>
-              .
-            </>
-          )}
-          onSubmit={async (id, input) => {
-            const question: PopupSurveyQuestion = {
-              id: id ?? `${Date.now()}`,
-              title: input.title,
-              type: input.type,
-              options: input.options,
-              order: input.order,
-              required: input.required,
-            };
-            const nextQuestions = id
-              ? openSurvey.questions.map((item) =>
-                  item.id === id ? question : item,
-                )
-              : [...openSurvey.questions, question];
-            const saved = await persistSurvey(openSurvey, nextQuestions);
-            rememberSurvey(saved);
-            const savedQuestion =
-              saved.questions.find((item) => item.id === question.id) ?? question;
-            return savedQuestion;
-          }}
-          onDelete={async (id) => {
-            const saved = await persistSurvey(
-              openSurvey,
-              openSurvey.questions.filter((item) => item.id !== id),
-            );
-            rememberSurvey(saved);
-          }}
-          onCreated={() => {}}
-          onUpdated={() => {}}
-          onDeleted={() => {}}
-        />
+        {detailTab === "questions" ? (
+          <QuestionsList
+            key={openSurvey.id}
+            questions={openSurvey.questions}
+            emptyLabel="Ajoutez des questions à cette enquête. L’application les affichera ensemble."
+            deleteDescription={(question) => (
+              <>
+                Cette question sera retirée de{" "}
+                <span className="font-medium text-foreground">
+                  {openSurvey.title}
+                </span>
+                {" : "}
+                <span className="font-medium text-foreground">
+                  {question.title}
+                </span>
+                .
+              </>
+            )}
+            onSubmit={async (id, input) => {
+              const question: PopupSurveyQuestion = {
+                id: id ?? `${Date.now()}`,
+                title: input.title,
+                type: input.type,
+                options: input.options,
+                order: input.order,
+                required: input.required,
+              };
+              const nextQuestions = id
+                ? openSurvey.questions.map((item) =>
+                    item.id === id ? question : item,
+                  )
+                : [...openSurvey.questions, question];
+              const saved = await persistSurvey(openSurvey, nextQuestions);
+              rememberSurvey(saved);
+              const savedQuestion =
+                saved.questions.find((item) => item.id === question.id) ??
+                question;
+              return savedQuestion;
+            }}
+            onDelete={async (id) => {
+              const saved = await persistSurvey(
+                openSurvey,
+                openSurvey.questions.filter((item) => item.id !== id),
+              );
+              rememberSurvey(saved);
+            }}
+            onCreated={() => {}}
+            onUpdated={() => {}}
+            onDeleted={() => {}}
+          />
+        ) : (
+          <ResponseStats
+            stats={surveyStats ?? []}
+            emptyAnswersLabel="Aucune réponse agrégée pour cette enquête."
+          />
+        )}
       </div>
     );
   }
@@ -272,11 +336,24 @@ export function PopupSurveysView() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setOpenSurveyId(survey.id)}
+                  onClick={() => {
+                    setDetailTab("questions");
+                    setOpenSurveyId(survey.id);
+                  }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-black"
                 >
                   <ListChecks size={14} strokeWidth={2} />
                   Questions
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailTab("stats");
+                    setOpenSurveyId(survey.id);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                >
+                  Statistiques
                 </button>
                 <button
                   type="button"

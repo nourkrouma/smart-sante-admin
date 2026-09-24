@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { createProduct, updateProduct } from "@/lib/products";
 import type { Product, ProductCategory, ProductColor } from "@/types/product";
@@ -17,6 +16,7 @@ type ProductFormDialogProps = {
   open: boolean;
   product: Product | null;
   onClose: () => void;
+  onSaved?: () => void;
 };
 
 function imagesToText(images: string[]): string {
@@ -34,8 +34,8 @@ export function ProductFormDialog({
   open,
   product,
   onClose,
+  onSaved,
 }: ProductFormDialogProps) {
-  const router = useRouter();
   const isEdit = product !== null;
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -100,7 +100,7 @@ export function ProductFormDialog({
         } else {
           await createProduct(input);
         }
-        router.refresh();
+        onSaved?.();
         onClose();
       } catch (mutationError) {
         setError(

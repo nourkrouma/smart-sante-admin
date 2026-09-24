@@ -2,15 +2,27 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
+  getCountFromServer,
   getDocs,
+  limit,
+  orderBy,
+  query,
   setDoc,
+  startAfter,
   type Firestore,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase";
+import {
+  DEFAULT_PAGE_SIZE,
+  pageFetchLimit,
+  type CursorPage,
+} from "@/lib/page-query";
 import type { Product, ProductCategory, ProductColor } from "@/types/product";
 import {
   DEFAULT_PRODUCT_CATEGORY,
   PRODUCT_CATEGORIES,
+  PRODUCT_CATEGORY_LABELS,
 } from "@/types/product";
 import { normalizeProductColors, parseProductColors } from "@/lib/colors";
 
@@ -103,14 +115,84 @@ function normalizeProductInput(input: ProductInput): ProductInput {
   };
 }
 
-export async function getProducts(
+export async function getProductsCount(
+  db: Firestore = getFirebaseDb(),
+): Promise<number> {
+  const snapshot = await getCountFromServer(
+    collection(db, PRODUCTS_COLLECTION),
+  );
+  return snapshot.data().count;
+}
+
+export async function getProductsPage(
+  options: {
+    cursorId?: string | null;
+    pageSize?: number;
+  } = {},
+  db: Firestore = getFirebaseDb(),
+): Promise<CursorPage<Product>> {
+  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+  const constraints = [
+    orderBy(documentId()),
+    limit(pageFetchLimit(pageSize)),
+  ];
+
+  if (options.cursorId) {
+    constraints.splice(1, 0, startAfter(options.cursorId));
+  }
+
+  const snapshot = await getDocs(
+    query(collection(db, PRODUCTS_COLLECTION), ...constraints),
+  );
+  const hasMore = snapshot.docs.length > pageSize;
+  const pageDocs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;
+  const items = pageDocs.map((docSnap) =>
+    mapFirestoreProduct(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+  const last = pageDocs[pageDocs.length - 1];
+
+  return {
+    items,
+    nextCursorId: hasMore && last ? last.id : null,
+    hasMore,
+  };
+}
+
+/** Full catalog load — only for committed search, not browse pagination. */
+export async function getAllProducts(
   db: Firestore = getFirebaseDb(),
 ): Promise<Product[]> {
-  const snapshot = await getDocs(collection(db, PRODUCTS_COLLECTION));
-
+  const snapshot = await getDocs(
+    query(collection(db, PRODUCTS_COLLECTION), orderBy(documentId())),
+  );
   return snapshot.docs.map((docSnap) =>
     mapFirestoreProduct(docSnap.id, docSnap.data() as Record<string, unknown>),
   );
+}
+
+export function productMatchesQuery(product: Product, rawQuery: string): boolean {
+  const needle = rawQuery.trim().toLowerCase();
+  if (!needle) return true;
+
+  const haystack = [
+    product.id,
+    product.name,
+    product.category,
+    PRODUCT_CATEGORY_LABELS[product.category],
+    ...product.tags,
+    ...product.sizes,
+    ...product.colors.map((color) => color.value),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(needle);
+}
+
+export function filterProducts(products: Product[], rawQuery: string): Product[] {
+  const needle = rawQuery.trim();
+  if (!needle) return products;
+  return products.filter((product) => productMatchesQuery(product, needle));
 }
 
 export async function createProduct(

@@ -1,9 +1,15 @@
 import {
   collection,
   doc,
+  documentId,
+  getCountFromServer,
   getDocs,
+  limit,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
+  startAfter,
   Timestamp,
   updateDoc,
   type Firestore,
@@ -11,6 +17,12 @@ import {
 import { getFirebaseDb } from "@/lib/firebase";
 import { firestoreUserMessage } from "@/lib/firestore-errors";
 import { parseOnboardingAnswers } from "@/lib/onboarding";
+import {
+  DEFAULT_PAGE_SIZE,
+  pageFetchLimit,
+  type CursorPage,
+} from "@/lib/page-query";
+import type { OnboardingAnswers } from "@/types/onboarding";
 import type { AppUser } from "@/types/user";
 
 const USERS_COLLECTION = "users";
@@ -64,7 +76,11 @@ function parseTimestamp(value: unknown): string | null {
   return null;
 }
 
-function mapFirestoreUser(id: string, data: Record<string, unknown>): AppUser {
+function mapFirestoreUser(
+  id: string,
+  data: Record<string, unknown>,
+  includeAnswers: boolean,
+): AppUser {
   return {
     id,
     fullName:
@@ -74,7 +90,9 @@ function mapFirestoreUser(id: string, data: Record<string, unknown>): AppUser {
     email: parseString(data.email),
     phone: parseString(data.phone) || parseString(data.phoneNumber),
     points: Math.max(0, parseNumber(data.points)),
-    onboardingAnswers: parseOnboardingAnswers(data.onboardingAnswers),
+    onboardingAnswers: includeAnswers
+      ? parseOnboardingAnswers(data.onboardingAnswers)
+      : {},
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
   };
@@ -92,16 +110,64 @@ export function normalizePoints(value: number): number {
   return value;
 }
 
-export async function getUsers(
+export async function getUsersCount(
   db: Firestore = getFirebaseDb(),
-): Promise<AppUser[]> {
-  const snapshot = await getDocs(collection(db, USERS_COLLECTION));
+): Promise<number> {
+  const snapshot = await getCountFromServer(collection(db, USERS_COLLECTION));
+  return snapshot.data().count;
+}
 
-  return snapshot.docs
+export async function getUsersPage(
+  options: {
+    cursorId?: string | null;
+    pageSize?: number;
+  } = {},
+  db: Firestore = getFirebaseDb(),
+): Promise<CursorPage<AppUser>> {
+  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+  const constraints = [
+    orderBy(documentId()),
+    limit(pageFetchLimit(pageSize)),
+  ];
+
+  if (options.cursorId) {
+    constraints.splice(1, 0, startAfter(options.cursorId));
+  }
+
+  const snapshot = await getDocs(
+    query(collection(db, USERS_COLLECTION), ...constraints),
+  );
+  const hasMore = snapshot.docs.length > pageSize;
+  const pageDocs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;
+  const items = pageDocs
     .map((docSnap) =>
-      mapFirestoreUser(docSnap.id, docSnap.data() as Record<string, unknown>),
+      mapFirestoreUser(
+        docSnap.id,
+        docSnap.data() as Record<string, unknown>,
+        false,
+      ),
     )
     .sort((a, b) => a.fullName.localeCompare(b.fullName, "fr"));
+
+  const last = pageDocs[pageDocs.length - 1];
+  return {
+    items,
+    nextCursorId: hasMore && last ? last.id : null,
+    hasMore,
+  };
+}
+
+/** Load answer maps only when opening onboarding stats — not on list pages. */
+export async function getOnboardingAnswerSets(
+  db: Firestore = getFirebaseDb(),
+): Promise<OnboardingAnswers[]> {
+  const snapshot = await getDocs(collection(db, USERS_COLLECTION));
+
+  return snapshot.docs.map((docSnap) =>
+    parseOnboardingAnswers(
+      (docSnap.data() as Record<string, unknown>).onboardingAnswers,
+    ),
+  );
 }
 
 export async function updateUserPoints(

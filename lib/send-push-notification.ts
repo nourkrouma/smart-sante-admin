@@ -22,7 +22,7 @@ export async function sendPushNotification(
     throw new Error("Session expirée. Reconnectez-vous.");
   }
 
-  const token = await user.getIdToken();
+  const token = await user.getIdToken(true);
   const response = await fetch("/api/notifications/send", {
     method: "POST",
     headers: {

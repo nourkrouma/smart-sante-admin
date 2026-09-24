@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { deleteProduct } from "@/lib/products";
 import type { Product } from "@/types/product";
 
 type DeleteProductDialogProps = {
   product: Product | null;
   onClose: () => void;
+  onDeleted?: () => void;
 };
 
 export function DeleteProductDialog({
   product,
   onClose,
+  onDeleted,
 }: DeleteProductDialogProps) {
-  const router = useRouter();
   const open = product !== null;
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -47,7 +47,7 @@ export function DeleteProductDialog({
     startTransition(async () => {
       try {
         await deleteProduct(product.id);
-        router.refresh();
+        onDeleted?.();
         onClose();
       } catch (mutationError) {
         setError(
