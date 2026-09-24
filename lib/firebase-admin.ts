@@ -69,7 +69,7 @@ function parseJsonLenient(raw: string): unknown {
     // Common Vercel / .env artifact: extra quotes before the closing brace
     const repaired = raw
       .replace(/^\uFEFF/, "")
-      .replace(/"+(\s*})\s*$/, '"$1")
+      .replace(/"+(\s*})\s*$/, '"$1')
       .replace(/"""+/g, '"');
     return JSON.parse(repaired);
   }
