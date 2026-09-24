@@ -79,6 +79,7 @@ export async function GET(request: Request) {
         hasBase64,
         hasProjectId,
         projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? null,
+        prefers: "FIREBASE_SERVICE_ACCOUNT_BASE64 when set",
       });
     } catch (error) {
       const configMessage = adminConfigErrorMessage(error);

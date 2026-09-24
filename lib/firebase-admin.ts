@@ -62,6 +62,19 @@ function normalizePrivateKey(key: string): string {
   return normalized;
 }
 
+function parseJsonLenient(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Common Vercel / .env artifact: extra quotes before the closing brace
+    const repaired = raw
+      .replace(/^\uFEFF/, "")
+      .replace(/"+(\s*})\s*$/, '"$1")
+      .replace(/"""+/g, '"');
+    return JSON.parse(repaired);
+  }
+}
+
 function parseServiceAccountJson(rawInput: string): ServiceAccount {
   let raw = stripWrappingQuotes(rawInput.trim());
 
@@ -79,7 +92,7 @@ function parseServiceAccountJson(rawInput: string): ServiceAccount {
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseJsonLenient(raw);
   } catch {
     throw new Error(
       "FIREBASE_SERVICE_ACCOUNT_JSON est invalide. Collez le JSON sur une seule ligne (ou une valeur base64 du JSON).",
@@ -89,7 +102,7 @@ function parseServiceAccountJson(rawInput: string): ServiceAccount {
   // Double-encoded: env value is a JSON string of the JSON object
   if (typeof parsed === "string") {
     try {
-      parsed = JSON.parse(parsed);
+      parsed = parseJsonLenient(parsed);
     } catch {
       throw new Error(
         "FIREBASE_SERVICE_ACCOUNT_JSON est invalide (chaîne JSON doublement encodée).",
@@ -117,18 +130,43 @@ function parseServiceAccountJson(rawInput: string): ServiceAccount {
 
 function parseServiceAccount(): ServiceAccount {
   const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
-  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64?.trim();
+  // Vercel sometimes wraps or adds whitespace/newlines in env values
+  const b64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64?.trim().replace(
+    /\s+/g,
+    "",
+  );
 
-  if (json) {
-    return parseServiceAccountJson(json);
+  const errors: string[] = [];
+
+  // Prefer BASE64 — JSON values are often mangled in the Vercel UI.
+  if (b64) {
+    try {
+      return parseServiceAccountJson(b64);
+    } catch (error) {
+      errors.push(
+        `BASE64: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
-  if (b64) {
-    return parseServiceAccountJson(b64);
+  if (json) {
+    try {
+      return parseServiceAccountJson(json);
+    } catch (error) {
+      errors.push(
+        `JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (!b64 && !json) {
+    throw new Error(
+      "Configuration serveur incomplète : définissez FIREBASE_SERVICE_ACCOUNT_BASE64 (recommandé) ou FIREBASE_SERVICE_ACCOUNT_JSON sur Vercel, puis redéployez.",
+    );
   }
 
   throw new Error(
-    "Configuration serveur incomplète : définissez FIREBASE_SERVICE_ACCOUNT_JSON (ou FIREBASE_SERVICE_ACCOUNT_BASE64) dans les variables d’environnement Vercel.",
+    `Compte de service invalide (${b64 ? "BASE64 défini" : "BASE64 absent"}, ${json ? "JSON défini" : "JSON absent"}). ${errors.join(" | ")}`,
   );
 }
 
