@@ -1,16 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: [
-    "firebase-admin",
-    "firebase-admin/app",
-    "firebase-admin/auth",
-    "firebase-admin/firestore",
-    "firebase-admin/messaging",
-    "@google-cloud/firestore",
-    "google-gax",
-    "google-auth-library",
-  ],
+  // Keep Admin SDK external on Vercel; jose@4 (overrides) keeps jwks-rsa CJS-compatible.
+  serverExternalPackages: ["firebase-admin"],
   images: {
     remotePatterns: [
       {
