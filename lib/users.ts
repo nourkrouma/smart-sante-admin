@@ -125,17 +125,19 @@ export async function getUsersPage(
   db: Firestore = getFirebaseDb(),
 ): Promise<CursorPage<AppUser>> {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-  const constraints = [
-    orderBy(documentId()),
-    limit(pageFetchLimit(pageSize)),
-  ];
-
-  if (options.cursorId) {
-    constraints.splice(1, 0, startAfter(options.cursorId));
-  }
-
   const snapshot = await getDocs(
-    query(collection(db, USERS_COLLECTION), ...constraints),
+    options.cursorId
+      ? query(
+          collection(db, USERS_COLLECTION),
+          orderBy(documentId()),
+          startAfter(options.cursorId),
+          limit(pageFetchLimit(pageSize)),
+        )
+      : query(
+          collection(db, USERS_COLLECTION),
+          orderBy(documentId()),
+          limit(pageFetchLimit(pageSize)),
+        ),
   );
   const hasMore = snapshot.docs.length > pageSize;
   const pageDocs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;

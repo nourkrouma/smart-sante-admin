@@ -179,17 +179,19 @@ export async function getOrdersPage(
 ): Promise<CursorPage<Order>> {
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const collectionName = await resolveOrdersCollection(db);
-  const constraints = [
-    orderBy(documentId()),
-    limit(pageFetchLimit(pageSize)),
-  ];
-
-  if (options.cursorId) {
-    constraints.splice(1, 0, startAfter(options.cursorId));
-  }
-
   const snapshot = await getDocs(
-    query(collection(db, collectionName), ...constraints),
+    options.cursorId
+      ? query(
+          collection(db, collectionName),
+          orderBy(documentId()),
+          startAfter(options.cursorId),
+          limit(pageFetchLimit(pageSize)),
+        )
+      : query(
+          collection(db, collectionName),
+          orderBy(documentId()),
+          limit(pageFetchLimit(pageSize)),
+        ),
   );
   const hasMore = snapshot.docs.length > pageSize;
   const pageDocs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;
