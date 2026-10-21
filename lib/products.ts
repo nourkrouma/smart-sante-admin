@@ -4,6 +4,7 @@ import {
   doc,
   documentId,
   getCountFromServer,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -12,18 +13,14 @@ import {
   startAfter,
   type Firestore,
 } from "firebase/firestore";
+import { assertCategoryExists } from "@/lib/categories";
 import { getFirebaseDb } from "@/lib/firebase";
 import {
   DEFAULT_PAGE_SIZE,
   pageFetchLimit,
   type CursorPage,
 } from "@/lib/page-query";
-import type { Product, ProductCategory, ProductColor } from "@/types/product";
-import {
-  DEFAULT_PRODUCT_CATEGORY,
-  PRODUCT_CATEGORIES,
-  PRODUCT_CATEGORY_LABELS,
-} from "@/types/product";
+import type { Product, ProductColor } from "@/types/product";
 import { normalizeProductColors, parseProductColors } from "@/lib/colors";
 
 const PRODUCTS_COLLECTION = "products";
@@ -35,7 +32,7 @@ export type ProductInput = {
   sizes: string[];
   colors: ProductColor[];
   tags: string[];
-  category: ProductCategory;
+  category: string;
 };
 
 function parseStringArray(value: unknown): string[] {
@@ -63,15 +60,16 @@ function normalizeUniqueStringArray(values: string[]): string[] {
   return result;
 }
 
-function isProductCategory(value: string): value is ProductCategory {
-  return (PRODUCT_CATEGORIES as readonly string[]).includes(value);
+function parseCategory(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function parseCategory(value: unknown): ProductCategory {
-  if (typeof value === "string" && isProductCategory(value)) {
-    return value;
+function normalizeCategory(value: string): string {
+  const category = value.trim();
+  if (!category || category.length > 120 || category.includes("/")) {
+    throw new Error("Choisissez une catégorie");
   }
-  return DEFAULT_PRODUCT_CATEGORY;
+  return category;
 }
 
 function mapFirestoreProduct(
@@ -100,10 +98,6 @@ function normalizeProductInput(input: ProductInput): ProductInput {
     throw new Error("Le prix doit être un nombre positif ou nul");
   }
 
-  if (!isProductCategory(input.category)) {
-    throw new Error("Catégorie de produit invalide");
-  }
-
   return {
     name,
     price: input.price,
@@ -111,7 +105,7 @@ function normalizeProductInput(input: ProductInput): ProductInput {
     sizes: normalizeStringArray(input.sizes),
     colors: normalizeProductColors(input.colors),
     tags: normalizeUniqueStringArray(input.tags),
-    category: input.category,
+    category: normalizeCategory(input.category),
   };
 }
 
@@ -172,7 +166,16 @@ export async function getAllProducts(
   );
 }
 
-export function productMatchesQuery(product: Product, rawQuery: string): boolean {
+export function productInCategory(product: Product, categoryId: string): boolean {
+  if (!categoryId) return true;
+  return product.category === categoryId;
+}
+
+export function productMatchesQuery(
+  product: Product,
+  rawQuery: string,
+  categoryName = "",
+): boolean {
   const needle = rawQuery.trim().toLowerCase();
   if (!needle) return true;
 
@@ -180,7 +183,7 @@ export function productMatchesQuery(product: Product, rawQuery: string): boolean
     product.id,
     product.name,
     product.category,
-    PRODUCT_CATEGORY_LABELS[product.category],
+    categoryName,
     ...product.tags,
     ...product.sizes,
     ...product.colors.map((color) => color.value),
@@ -191,10 +194,20 @@ export function productMatchesQuery(product: Product, rawQuery: string): boolean
   return haystack.includes(needle);
 }
 
-export function filterProducts(products: Product[], rawQuery: string): Product[] {
+export function filterProducts(
+  products: Product[],
+  rawQuery: string,
+  categoryNames: Record<string, string> = {},
+): Product[] {
   const needle = rawQuery.trim();
   if (!needle) return products;
-  return products.filter((product) => productMatchesQuery(product, needle));
+  return products.filter((product) =>
+    productMatchesQuery(
+      product,
+      needle,
+      categoryNames[product.category] ?? "",
+    ),
+  );
 }
 
 export async function createProduct(
@@ -202,6 +215,7 @@ export async function createProduct(
   db: Firestore = getFirebaseDb(),
 ): Promise<Product> {
   const normalized = normalizeProductInput(input);
+  await assertCategoryExists(normalized.category, db);
   const id = `${Date.now()}`;
   const product: Product = { id, ...normalized };
 
@@ -219,9 +233,17 @@ export async function updateProduct(
   }
 
   const normalized = normalizeProductInput(input);
+  const ref = doc(db, PRODUCTS_COLLECTION, id);
+  const existing = await getDoc(ref);
+  const previousCategory = existing.exists()
+    ? parseCategory((existing.data() as Record<string, unknown>).category)
+    : "";
+  if (normalized.category !== previousCategory) {
+    await assertCategoryExists(normalized.category, db);
+  }
   const product: Product = { id, ...normalized };
 
-  await setDoc(doc(db, PRODUCTS_COLLECTION, id), product, { merge: true });
+  await setDoc(ref, product, { merge: true });
   return product;
 }
 

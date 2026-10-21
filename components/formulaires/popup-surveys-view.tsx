@@ -12,6 +12,11 @@ import { QuestionsList } from "@/components/onboarding/questions-list";
 import { ResponseStats } from "@/components/onboarding/response-stats";
 import { DeleteQuestionDialog } from "@/components/onboarding/delete-question-dialog";
 import { SurveyFormDialog } from "@/components/formulaires/survey-form-dialog";
+import {
+  SURVEY_AVAILABILITY_LABELS,
+  surveyAvailability,
+  surveyScheduleLabel,
+} from "@/lib/popup-survey-input";
 import { getPopupSurveyStats } from "@/lib/popup-survey-stats";
 import {
   createPopupSurvey,
@@ -24,6 +29,22 @@ import {
 import type { PopupSurvey, PopupSurveyQuestion } from "@/types/popup-survey";
 
 type SurveyDetailTab = "questions" | "stats";
+
+function SurveyStatusBadge({ survey }: { survey: PopupSurvey }) {
+  const status = surveyAvailability(survey);
+  const live = status === "live";
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+        live
+          ? "bg-brand/10 text-brand"
+          : "bg-background text-muted ring-1 ring-border"
+      }`}
+    >
+      {SURVEY_AVAILABILITY_LABELS[status]}
+    </span>
+  );
+}
 
 function sortSurveys(surveys: PopupSurvey[]) {
   return [...surveys].sort(
@@ -110,6 +131,8 @@ export function PopupSurveysView() {
       title: survey.title,
       description: survey.description,
       active: survey.active,
+      startsAt: survey.startsAt,
+      endsAt: survey.endsAt,
       order: survey.order,
       questions: sortSurveyQuestions(questions),
     });
@@ -157,16 +180,11 @@ export function PopupSurveysView() {
                 <p className="mt-1 text-sm text-muted">{openSurvey.description}</p>
               ) : null}
             </div>
-            <span
-              className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                openSurvey.active
-                  ? "bg-brand/10 text-brand"
-                  : "bg-background text-muted ring-1 ring-border"
-              }`}
-            >
-              {openSurvey.active ? "Active" : "Inactive"}
-            </span>
+            <SurveyStatusBadge survey={openSurvey} />
           </div>
+          <p className="mt-3 text-xs text-muted">
+            {surveyScheduleLabel(openSurvey)}
+          </p>
         </div>
 
         <div
@@ -311,15 +329,7 @@ export function PopupSurveysView() {
                     <h2 className="text-base font-semibold text-foreground">
                       {survey.title}
                     </h2>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        survey.active
-                          ? "bg-brand/10 text-brand"
-                          : "bg-background text-muted ring-1 ring-border"
-                      }`}
-                    >
-                      {survey.active ? "Active" : "Inactive"}
-                    </span>
+                    <SurveyStatusBadge survey={survey} />
                   </div>
                   {survey.description ? (
                     <p className="mt-1 line-clamp-2 text-sm text-muted">
@@ -329,6 +339,8 @@ export function PopupSurveysView() {
                   <p className="mt-2 text-xs text-muted">
                     {questionCountLabel(survey.questions.length)} · ordre{" "}
                     {survey.order}
+                    {" · "}
+                    {surveyScheduleLabel(survey)}
                   </p>
                 </div>
               </div>
@@ -380,8 +392,10 @@ export function PopupSurveysView() {
         </ul>
       )}
 
+      {formOpen ? (
       <SurveyFormDialog
-        open={formOpen}
+        key={editing?.id ?? "new"}
+        open
         survey={editing}
         nextOrder={nextSurveyOrder(surveys)}
         onClose={() => {
@@ -393,6 +407,8 @@ export function PopupSurveysView() {
             title: input.title,
             description: input.description,
             active: input.active,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
             order: input.order,
             questions: editing?.questions ?? [],
           };
@@ -402,6 +418,7 @@ export function PopupSurveysView() {
         }}
         onSaved={rememberSurvey}
       />
+      ) : null}
 
       <DeleteQuestionDialog
         question={deleting}

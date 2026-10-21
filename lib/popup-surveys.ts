@@ -119,6 +119,8 @@ function mapFirestoreSurvey(
     title: parseString(data.title),
     description: parseString(data.description),
     active: data.active !== false,
+    startsAt: parseTimestamp(data.startsAt),
+    endsAt: parseTimestamp(data.endsAt),
     order: parseNumber(data.order),
     questions: sortSurveyQuestions(questions),
     stats,

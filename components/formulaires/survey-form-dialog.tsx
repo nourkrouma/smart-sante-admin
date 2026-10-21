@@ -2,6 +2,10 @@
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { X } from "lucide-react";
+import {
+  datetimeLocalToIso,
+  toDatetimeLocalInput,
+} from "@/lib/popup-survey-input";
 import type { PopupSurvey } from "@/types/popup-survey";
 
 export type SurveyFormInput = {
@@ -9,6 +13,8 @@ export type SurveyFormInput = {
   description: string;
   order: number;
   active: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
 };
 
 type SurveyFormDialogProps = {
@@ -29,21 +35,16 @@ export function SurveyFormDialog({
   onSaved,
 }: SurveyFormDialogProps) {
   const isEdit = survey !== null;
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [order, setOrder] = useState("1");
-  const [active, setActive] = useState(true);
+  const [title, setTitle] = useState(survey?.title ?? "");
+  const [description, setDescription] = useState(survey?.description ?? "");
+  const [order, setOrder] = useState(String(survey?.order ?? nextOrder));
+  const [startsAt, setStartsAt] = useState(
+    toDatetimeLocalInput(survey?.startsAt ?? null),
+  );
+  const [endsAt, setEndsAt] = useState(toDatetimeLocalInput(survey?.endsAt ?? null));
+  const [active, setActive] = useState(survey?.active ?? true);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (!open) return;
-    setTitle(survey?.title ?? "");
-    setDescription(survey?.description ?? "");
-    setOrder(String(survey?.order ?? nextOrder));
-    setActive(survey?.active ?? true);
-    setError(null);
-  }, [open, survey, nextOrder]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,6 +68,23 @@ export function SurveyFormDialog({
     setError(null);
 
     const parsedOrder = Number.parseInt(order, 10);
+    let startsAtIso: string | null;
+    let endsAtIso: string | null;
+    try {
+      startsAtIso = datetimeLocalToIso(
+        startsAt,
+        "La date de mise en ligne est invalide",
+      );
+      endsAtIso = datetimeLocalToIso(endsAt, "La date de fin est invalide");
+    } catch (validationError) {
+      setError(
+        validationError instanceof Error
+          ? validationError.message
+          : "Date invalide",
+      );
+      return;
+    }
+
     startTransition(async () => {
       try {
         const saved = await onSubmit({
@@ -74,6 +92,8 @@ export function SurveyFormDialog({
           description,
           order: Number.isFinite(parsedOrder) ? parsedOrder : Number.NaN,
           active,
+          startsAt: startsAtIso,
+          endsAt: endsAtIso,
         });
         onSaved(saved);
         onClose();
@@ -172,15 +192,53 @@ export function SurveyFormDialog({
             />
           </label>
 
-          <label className="flex items-center gap-2 text-sm text-foreground">
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted">
+              Mise en ligne
+            </span>
+            <input
+              type="datetime-local"
+              value={startsAt}
+              onChange={(event) => setStartsAt(event.target.value)}
+              disabled={isPending}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+            />
+            <span className="block text-xs text-muted">
+              Laissez vide pour une mise en ligne immédiate.
+            </span>
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted">
+              Fin (optionnel)
+            </span>
+            <input
+              type="datetime-local"
+              value={endsAt}
+              onChange={(event) => setEndsAt(event.target.value)}
+              disabled={isPending}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+            />
+            <span className="block text-xs text-muted">
+              Laissez vide pour la laisser en ligne jusqu’à désactivation.
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 text-sm text-foreground">
             <input
               type="checkbox"
               checked={active}
               onChange={(event) => setActive(event.target.checked)}
               disabled={isPending}
-              className="size-4 rounded border-border text-brand accent-brand"
+              className="mt-0.5 size-4 rounded border-border text-brand accent-brand"
             />
-            Enquête active (peut s’afficher dans l’application)
+            <span>
+              Enquête active
+              <span className="mt-0.5 block text-xs text-muted">
+                Une enquête inactive ne s’affiche pas, même si la date de mise
+                en ligne est atteinte.
+              </span>
+            </span>
           </label>
 
           {error ? (

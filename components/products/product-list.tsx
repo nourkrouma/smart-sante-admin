@@ -4,14 +4,19 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { ListSearch } from "@/components/list-search";
-import type { Product } from "@/types/product";
+import { labelForCategory } from "@/lib/categories";
 import { formatPrice } from "@/lib/products";
+import type { Category } from "@/types/category";
+import type { Product } from "@/types/product";
 import { ProductDetailPanel } from "@/components/products/product-detail-panel";
 import { ProductFormDialog } from "@/components/products/product-form-dialog";
 import { DeleteProductDialog } from "@/components/products/delete-product-dialog";
 
 type ProductListProps = {
   products: Product[];
+  categories: Category[];
+  categoryFilter: string;
+  onCategoryFilterChange: (categoryId: string) => void;
   pageIndex: number;
   hasMore: boolean;
   loading?: boolean;
@@ -63,6 +68,9 @@ function ProductThumb({ src, alt, sizes, className = "" }: ProductThumbProps) {
 
 export function ProductList({
   products,
+  categories,
+  categoryFilter,
+  onCategoryFilterChange,
   pageIndex,
   hasMore,
   loading = false,
@@ -112,6 +120,23 @@ export function ProductList({
           placeholder="Rechercher par nom, tags, catégorie…"
           disabled={loading && products.length === 0}
         />
+        <label className="block shrink-0 lg:w-64">
+          <span className="sr-only">Filtrer par catégorie</span>
+          <select
+            value={categoryFilter}
+            onChange={(event) => onCategoryFilterChange(event.target.value)}
+            disabled={loading && products.length === 0}
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:opacity-60"
+          >
+            <option value="">Toutes les catégories</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+                {category.active ? "" : " (masquée)"}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           onClick={openCreate}
@@ -123,23 +148,34 @@ export function ProductList({
       </div>
 
       {products.length === 0 ? (
-        <p className="py-16 text-center text-sm text-muted">
-          {emptyMessage ??
-            (draftQuery.trim()
-              ? "Aucun produit ne correspond à votre recherche."
-              : "Aucun produit pour le moment.")}
-        </p>
+        loading ? (
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-surface px-5 py-8 text-sm text-muted">
+            <span
+              className="size-4 animate-spin rounded-full border-2 border-border border-t-brand"
+              aria-hidden
+            />
+            Chargement des produits…
+          </div>
+        ) : (
+          <p className="py-16 text-center text-sm text-muted">
+            {emptyMessage ??
+              (draftQuery.trim()
+                ? "Aucun produit ne correspond à votre recherche."
+                : "Aucun produit pour le moment.")}
+          </p>
+        )
       ) : (
         <div
           className={`overflow-x-auto rounded-lg border border-border bg-surface ${
             loading ? "opacity-60" : ""
           }`}
         >
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
               <tr className="border-b border-border text-xs font-medium uppercase tracking-wide text-muted">
                 <th className="px-5 py-3.5 font-medium">Image</th>
                 <th className="px-5 py-3.5 font-medium">Nom</th>
+                <th className="px-5 py-3.5 font-medium">Catégorie</th>
                 <th className="px-5 py-3.5 font-medium">Prix</th>
                 <th className="px-5 py-3.5 font-medium">Tags</th>
                 <th className="px-5 py-3.5 font-medium">Galerie</th>
@@ -182,6 +218,9 @@ export function ProductList({
                     </td>
                     <td className="px-5 py-4 font-medium text-foreground">
                       {product.name}
+                    </td>
+                    <td className="px-5 py-4 text-muted">
+                      {labelForCategory(categories, product.category)}
                     </td>
                     <td className="px-5 py-4 tabular-nums text-muted">
                       {formatPrice(product.price)}
@@ -287,6 +326,9 @@ export function ProductList({
 
       <ProductDetailPanel
         product={selected}
+        categoryName={
+          selected ? labelForCategory(categories, selected.category) : undefined
+        }
         onClose={() => setSelected(null)}
         onEdit={openEdit}
         suppressEscape={formOpen}
@@ -295,6 +337,7 @@ export function ProductList({
       <ProductFormDialog
         open={formOpen}
         product={editing}
+        categories={categories}
         onClose={() => {
           setFormOpen(false);
           setEditing(null);

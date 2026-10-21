@@ -105,6 +105,13 @@ service cloud.firestore {
         && data.active is bool
         && data.order is number
         && data.order >= 0
+        && (!('startsAt' in data) || data.startsAt == null || data.startsAt is timestamp)
+        && (!('endsAt' in data) || data.endsAt == null || data.endsAt is timestamp)
+        && (
+          !('startsAt' in data) || !('endsAt' in data)
+          || data.startsAt == null || data.endsAt == null
+          || (data.startsAt is timestamp && data.endsAt is timestamp && data.endsAt > data.startsAt)
+        )
         && data.questions is list
         && data.questions.size() <= 40
         && (data.questions.size() == 0 || isValidPopupSurveyQuestion(data.questions[0]));
@@ -171,6 +178,25 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/orders/$(orderId))
         && get(/databases/$(database)/documents/orders/$(orderId)).data.userId
           == request.auth.uid;
+    }
+
+    function isValidCategory(categoryId) {
+      let data = request.resource.data;
+      return categoryId.size() > 0
+        && categoryId.size() <= 120
+        && data.id == categoryId
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.order is int
+        && data.order >= 0
+        && data.active is bool;
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidCategory(categoryId);
+      allow delete: if isAdmin();
     }
 
     match /products/{productId} {

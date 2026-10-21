@@ -8,12 +8,14 @@ import {
   ListChecks,
   LogOut,
   Package,
+  Tags,
   Users,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 
 const nav = [
   { href: "/products", label: "Produits", icon: Package },
+  { href: "/categories", label: "Catégories", icon: Tags },
   { href: "/commandes", label: "Commandes", icon: ClipboardList },
   { href: "/formulaires", label: "Formulaires", icon: ListChecks },
   { href: "/users", label: "Utilisateurs", icon: Users },

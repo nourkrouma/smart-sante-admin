@@ -4,6 +4,7 @@ import {
   normalizeSurveyInput,
   POPUP_SURVEYS_COLLECTION,
 } from "@/lib/popup-survey-input";
+import { surveyDocumentFields } from "@/lib/popup-survey-write";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +70,7 @@ export async function PUT(request: Request, context: RouteContext) {
         .set(
           {
             id: surveyId,
-            ...normalized,
+            ...surveyDocumentFields(normalized),
             updatedAt: FieldValue.serverTimestamp(),
           },
           { merge: true },

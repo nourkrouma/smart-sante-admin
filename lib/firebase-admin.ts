@@ -50,13 +50,25 @@ function stripWrappingQuotes(value: string): string {
   return trimmed;
 }
 
+function rewrapPem(key: string): string {
+  const match = key.match(
+    /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]+?)-----END \1-----/,
+  );
+  if (!match) return key;
+  const body = match[2].replace(/\s+/g, "");
+  const lines = body.match(/.{1,64}/g);
+  if (!lines || lines.length === 0) return key;
+  return `-----BEGIN ${match[1]}-----\n${lines.join("\n")}\n-----END ${match[1]}-----\n`;
+}
+
 function normalizePrivateKey(key: string): string {
   let normalized = key.trim();
-  if (normalized.includes("\\n") && !normalized.includes("\n")) {
-    normalized = normalized.replace(/\\n/g, "\n");
-  }
   if (normalized.includes("\\n")) {
     normalized = normalized.replace(/\\n/g, "\n");
+  }
+  // Env pastes often flatten the PEM onto one line. OpenSSL then rejects it.
+  if (normalized.includes("BEGIN") && !normalized.includes("\n")) {
+    normalized = rewrapPem(normalized);
   }
   return normalized;
 }

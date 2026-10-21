@@ -1,23 +1,30 @@
 "use client";
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
+import Link from "next/link";
 import { X } from "lucide-react";
 import { createProduct, updateProduct } from "@/lib/products";
-import type { Product, ProductCategory, ProductColor } from "@/types/product";
-import {
-  DEFAULT_PRODUCT_CATEGORY,
-  PRODUCT_CATEGORIES,
-  PRODUCT_CATEGORY_LABELS,
-} from "@/types/product";
+import type { Category } from "@/types/category";
+import type { Product, ProductColor } from "@/types/product";
 import { TagInput } from "@/components/products/tag-input";
 import { ColorInput } from "@/components/products/color-input";
 
 type ProductFormDialogProps = {
   open: boolean;
   product: Product | null;
+  categories: Category[];
   onClose: () => void;
   onSaved?: () => void;
 };
+
+function selectableCategories(
+  categories: Category[],
+  selectedId: string,
+): Category[] {
+  return categories.filter(
+    (category) => category.active || category.id === selectedId,
+  );
+}
 
 function imagesToText(images: string[]): string {
   return images.join("\n");
@@ -33,15 +40,14 @@ function textToImages(text: string): string[] {
 export function ProductFormDialog({
   open,
   product,
+  categories,
   onClose,
   onSaved,
 }: ProductFormDialogProps) {
   const isEdit = product !== null;
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
-  const [category, setCategory] = useState<ProductCategory>(
-    DEFAULT_PRODUCT_CATEGORY,
-  );
+  const [category, setCategory] = useState("");
   const [imagesText, setImagesText] = useState("");
   const [sizes, setSizes] = useState<string[]>([]);
   const [colors, setColors] = useState<ProductColor[]>([]);
@@ -53,13 +59,17 @@ export function ProductFormDialog({
     if (!open) return;
     setName(product?.name ?? "");
     setPrice(product ? String(product.price) : "");
-    setCategory(product?.category ?? DEFAULT_PRODUCT_CATEGORY);
+    setCategory(product?.category ?? "");
     setImagesText(product ? imagesToText(product.images) : "");
     setSizes(product?.sizes ?? []);
     setColors(product?.colors ?? []);
     setTags(product?.tags ?? []);
     setError(null);
   }, [open, product]);
+
+  const categoryValue =
+    category ||
+    (product ? "" : (categories.find((item) => item.active)?.id ?? ""));
 
   useEffect(() => {
     if (!open) return;
@@ -90,7 +100,7 @@ export function ProductFormDialog({
       sizes,
       colors,
       tags,
-      category,
+      category: categoryValue,
     };
 
     startTransition(async () => {
@@ -182,26 +192,46 @@ export function ProductFormDialog({
             />
           </label>
 
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
+          <div className="block space-y-1.5">
+            <span
+              id="product-category-label"
+              className="text-xs font-medium uppercase tracking-wide text-muted"
+            >
               Catégorie
             </span>
-            <select
-              value={category}
-              onChange={(event) =>
-                setCategory(event.target.value as ProductCategory)
-              }
-              required
-              disabled={isPending}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-            >
-              {PRODUCT_CATEGORIES.map((value) => (
-                <option key={value} value={value}>
-                  {PRODUCT_CATEGORY_LABELS[value]}
+            {categories.length === 0 && !categoryValue ? (
+              <span className="block rounded-lg border border-border bg-background px-3 py-2 text-sm text-muted">
+                Aucune catégorie.{" "}
+                <Link href="/categories" className="font-medium text-brand">
+                  Créez-en une
+                </Link>{" "}
+                avant d’ajouter un produit.
+              </span>
+            ) : (
+              <select
+                value={categoryValue}
+                onChange={(event) => setCategory(event.target.value)}
+                required
+                disabled={isPending}
+                aria-labelledby="product-category-label"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+              >
+                <option value="" disabled>
+                  Choisir une catégorie
                 </option>
-              ))}
-            </select>
-          </label>
+                {!categories.some((item) => item.id === categoryValue) &&
+                categoryValue ? (
+                  <option value={categoryValue}>{categoryValue}</option>
+                ) : null}
+                {selectableCategories(categories, categoryValue).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                    {item.active ? "" : " (masquée)"}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
           <TagInput
             label="Tailles"

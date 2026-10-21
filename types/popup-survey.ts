@@ -17,6 +17,10 @@ export type PopupSurvey = {
   title: string;
   description: string;
   active: boolean;
+  /** ISO time the survey may appear. Null means as soon as it is active. */
+  startsAt: string | null;
+  /** ISO time the survey stops appearing. Null means no automatic end. */
+  endsAt: string | null;
   order: number;
   questions: PopupSurveyQuestion[];
   stats: PopupSurveyStats | null;

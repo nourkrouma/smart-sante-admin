@@ -2,19 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProductList } from "@/components/products/product-list";
+import { categoryNameMap, getCategories } from "@/lib/categories";
+import { firestoreUserMessage } from "@/lib/firestore-errors";
 import {
-  filterProducts,
   getAllProducts,
   getProductsCount,
   getProductsPage,
+  productInCategory,
+  productMatchesQuery,
 } from "@/lib/products";
 import { DEFAULT_PAGE_SIZE } from "@/lib/page-query";
+import type { Category } from "@/types/category";
 import type { Product } from "@/types/product";
 
 export function ProductsView() {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
@@ -23,11 +28,14 @@ export function ProductsView() {
 
   const [draftQuery, setDraftQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
   const [catalog, setCatalog] = useState<Product[] | null>(null);
   const [searchPageIndex, setSearchPageIndex] = useState(0);
   const catalogRequestId = useRef(0);
 
   const searching = activeQuery.trim().length > 0;
+  const catalogMode = searching || categoryFilter.length > 0;
 
   const loadPage = useCallback(
     async (cursorId: string | null, index: number) => {
@@ -75,6 +83,22 @@ export function ProductsView() {
         if (!cancelled) setTotalCount(null);
       });
 
+    getCategories()
+      .then((loaded) => {
+        if (cancelled) return;
+        setCategoryError(null);
+        setCategories(loaded);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setCategoryError(
+          firestoreUserMessage(
+            loadError,
+            "Impossible de charger les catégories",
+          ),
+        );
+      });
+
     void loadPage(null, 0);
 
     return () => {
@@ -84,10 +108,10 @@ export function ProductsView() {
 
   useEffect(() => {
     setSearchPageIndex(0);
-  }, [activeQuery]);
+  }, [activeQuery, categoryFilter]);
 
   useEffect(() => {
-    if (!searching) {
+    if (!catalogMode) {
       setCatalog(null);
       return;
     }
@@ -122,26 +146,39 @@ export function ProductsView() {
     return () => {
       cancelled = true;
     };
-  }, [searching, catalog, reloadKey]);
+  }, [catalogMode, catalog, reloadKey]);
+
+  const namesByCategory = useMemo(
+    () => categoryNameMap(categories),
+    [categories],
+  );
 
   const searchMatches = useMemo(() => {
-    if (!searching || !catalog) return [];
-    return filterProducts(catalog, activeQuery);
-  }, [searching, catalog, activeQuery]);
+    if (!catalogMode || !catalog) return [];
+    return catalog.filter(
+      (product) =>
+        productInCategory(product, categoryFilter) &&
+        productMatchesQuery(
+          product,
+          activeQuery,
+          namesByCategory[product.category] ?? "",
+        ),
+    );
+  }, [catalogMode, catalog, categoryFilter, activeQuery, namesByCategory]);
 
   const searchTotalPages = Math.max(
     1,
     Math.ceil(searchMatches.length / DEFAULT_PAGE_SIZE),
   );
   const safeSearchPage = Math.min(searchPageIndex, searchTotalPages - 1);
-  const searchPageProducts = searching
+  const searchPageProducts = catalogMode
     ? searchMatches.slice(
         safeSearchPage * DEFAULT_PAGE_SIZE,
         safeSearchPage * DEFAULT_PAGE_SIZE + DEFAULT_PAGE_SIZE,
       )
     : [];
 
-  const displayedProducts = searching ? searchPageProducts : products;
+  const displayedProducts = catalogMode ? searchPageProducts : products;
 
   function commitSearch(value: string) {
     const next = value.trim();
@@ -151,7 +188,7 @@ export function ProductsView() {
 
   function handlePrev() {
     if (loading) return;
-    if (searching) {
+    if (catalogMode) {
       setSearchPageIndex((current) => Math.max(0, current - 1));
       return;
     }
@@ -161,7 +198,7 @@ export function ProductsView() {
 
   function handleNext() {
     if (loading) return;
-    if (searching) {
+    if (catalogMode) {
       setSearchPageIndex((current) =>
         Math.min(searchTotalPages - 1, current + 1),
       );
@@ -179,13 +216,19 @@ export function ProductsView() {
     setReloadKey((value) => value + 1);
   }
 
-  const headerCount = searching
+  const headerCount = catalogMode
     ? `${searchMatches.length} résultat${searchMatches.length === 1 ? "" : "s"}`
     : totalCount != null
       ? `${totalCount} produit${totalCount === 1 ? "" : "s"}`
       : products
         ? "Produits"
         : "Chargement des produits…";
+
+  const emptyMessage = searching
+    ? "Aucun produit ne correspond à votre recherche."
+    : categoryFilter
+      ? "Aucun produit dans cette catégorie."
+      : undefined;
 
   return (
     <div className="w-full px-4 py-8 sm:px-8 sm:py-10">
@@ -201,21 +244,25 @@ export function ProductsView() {
           {error}
         </p>
       ) : null}
+      {categoryError ? (
+        <p className="mb-4 text-sm text-red-700" role="alert">
+          {categoryError}
+        </p>
+      ) : null}
 
       {displayedProducts ? (
         <ProductList
           products={displayedProducts}
-          pageIndex={searching ? safeSearchPage : pageIndex}
+          categories={categories}
+          categoryFilter={categoryFilter}
+          onCategoryFilterChange={setCategoryFilter}
+          pageIndex={catalogMode ? safeSearchPage : pageIndex}
           hasMore={
-            searching ? safeSearchPage < searchTotalPages - 1 : hasMore
+            catalogMode ? safeSearchPage < searchTotalPages - 1 : hasMore
           }
-          loading={loading || (searching && catalog === null)}
-          emptyMessage={
-            searching
-              ? "Aucun produit ne correspond à votre recherche."
-              : undefined
-          }
-          resultCount={searching ? searchMatches.length : undefined}
+          loading={loading || (catalogMode && catalog === null)}
+          emptyMessage={emptyMessage}
+          resultCount={catalogMode ? searchMatches.length : undefined}
           draftQuery={draftQuery}
           onDraftQueryChange={setDraftQuery}
           onSearchSubmit={commitSearch}

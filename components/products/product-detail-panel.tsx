@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Loader2, Pencil, X } from "lucide-react";
 import type { Product } from "@/types/product";
-import { PRODUCT_CATEGORY_LABELS } from "@/types/product";
 import { formatOptionalList, formatPrice } from "@/lib/products";
 
 type ProductDetailPanelProps = {
   product: Product | null;
+  categoryName?: string;
   onClose: () => void;
   onEdit: (product: Product) => void;
   suppressEscape?: boolean;
@@ -16,6 +16,7 @@ type ProductDetailPanelProps = {
 
 export function ProductDetailPanel({
   product,
+  categoryName,
   onClose,
   onEdit,
   suppressEscape = false,
@@ -165,7 +166,7 @@ export function ProductDetailPanel({
                     Catégorie
                   </p>
                   <p className="mt-1 text-sm text-foreground">
-                    {PRODUCT_CATEGORY_LABELS[product.category]}
+                    {categoryName || product.category || "—"}
                   </p>
                 </div>
 

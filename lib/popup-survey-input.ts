@@ -11,9 +11,81 @@ export type PopupSurveyInput = {
   title: string;
   description: string;
   active: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
   order: number;
   questions: PopupSurveyQuestion[];
 };
+
+export type SurveyAvailability = "inactive" | "scheduled" | "live" | "ended";
+
+const SURVEY_DATE_FORMAT = new Intl.DateTimeFormat("fr-DZ", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+export function toDatetimeLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Browser-local `datetime-local` value to a UTC ISO instant. */
+export function datetimeLocalToIso(value: string, label: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(label);
+  }
+  return date.toISOString();
+}
+
+function normalizeOptionalInstant(
+  value: string | null,
+  label: string,
+): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(label);
+  }
+  return date.toISOString();
+}
+
+export function surveyAvailability(
+  survey: Pick<PopupSurveyInput, "active" | "startsAt" | "endsAt">,
+  now = new Date(),
+): SurveyAvailability {
+  if (!survey.active) return "inactive";
+  const start = survey.startsAt ? new Date(survey.startsAt) : null;
+  const end = survey.endsAt ? new Date(survey.endsAt) : null;
+  if (start && !Number.isNaN(start.getTime()) && now < start) return "scheduled";
+  if (end && !Number.isNaN(end.getTime()) && now >= end) return "ended";
+  return "live";
+}
+
+export const SURVEY_AVAILABILITY_LABELS: Record<SurveyAvailability, string> = {
+  inactive: "Inactive",
+  scheduled: "Programmée",
+  live: "En ligne",
+  ended: "Terminée",
+};
+
+export function surveyScheduleLabel(
+  survey: Pick<PopupSurveyInput, "startsAt" | "endsAt">,
+): string {
+  const start = survey.startsAt ? SURVEY_DATE_FORMAT.format(new Date(survey.startsAt)) : null;
+  const end = survey.endsAt ? SURVEY_DATE_FORMAT.format(new Date(survey.endsAt)) : null;
+  if (start && end) return `Du ${start} au ${end}`;
+  if (start) return `Mise en ligne le ${start}`;
+  if (end) return `Jusqu’au ${end}`;
+  return "Mise en ligne immédiate";
+}
 
 export function sortSurveyQuestions(
   questions: PopupSurveyQuestion[],
@@ -92,6 +164,18 @@ export function normalizeSurveyInput(input: PopupSurveyInput): PopupSurveyInput 
     throw new Error("L’ordre doit être un entier positif ou nul");
   }
 
+  const startsAt = normalizeOptionalInstant(
+    input.startsAt,
+    "La date de mise en ligne est invalide",
+  );
+  const endsAt = normalizeOptionalInstant(
+    input.endsAt,
+    "La date de fin est invalide",
+  );
+  if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
+    throw new Error("La fin doit être postérieure à la mise en ligne");
+  }
+
   if (input.questions.length > MAX_SURVEY_QUESTIONS) {
     throw new Error(
       `Une enquête peut contenir au plus ${MAX_SURVEY_QUESTIONS} questions`,
@@ -116,6 +200,8 @@ export function normalizeSurveyInput(input: PopupSurveyInput): PopupSurveyInput 
     title,
     description,
     active: Boolean(input.active),
+    startsAt,
+    endsAt,
     order: Math.trunc(input.order),
     questions,
   };
@@ -128,6 +214,8 @@ export function isPopupSurveyInput(value: unknown): value is PopupSurveyInput {
     typeof record.title === "string" &&
     typeof record.description === "string" &&
     typeof record.active === "boolean" &&
+    (record.startsAt === null || typeof record.startsAt === "string") &&
+    (record.endsAt === null || typeof record.endsAt === "string") &&
     typeof record.order === "number" &&
     Array.isArray(record.questions)
   );
