@@ -5,9 +5,10 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { createProduct, updateProduct } from "@/lib/products";
 import type { Category } from "@/types/category";
-import type { Product, ProductColor } from "@/types/product";
+import type { Product } from "@/types/product";
 import { TagInput } from "@/components/products/tag-input";
 import { ColorInput } from "@/components/products/color-input";
+import { ProductImageField } from "@/components/products/product-image-field";
 
 type ProductFormDialogProps = {
   open: boolean;
@@ -37,7 +38,14 @@ function textToImages(text: string): string[] {
     .filter(Boolean);
 }
 
-export function ProductFormDialog({
+export function ProductFormDialog(props: ProductFormDialogProps) {
+  if (!props.open) return null;
+  return (
+    <ProductFormDialogBody key={props.product?.id ?? "new"} {...props} />
+  );
+}
+
+function ProductFormDialogBody({
   open,
   product,
   categories,
@@ -45,27 +53,19 @@ export function ProductFormDialog({
   onSaved,
 }: ProductFormDialogProps) {
   const isEdit = product !== null;
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
-  const [category, setCategory] = useState("");
-  const [imagesText, setImagesText] = useState("");
-  const [sizes, setSizes] = useState<string[]>([]);
-  const [colors, setColors] = useState<ProductColor[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
+  const [name, setName] = useState(product?.name ?? "");
+  const [price, setPrice] = useState(product ? String(product.price) : "");
+  const [category, setCategory] = useState(product?.category ?? "");
+  const [imagesText, setImagesText] = useState(
+    product ? imagesToText(product.images) : "",
+  );
+  const [sizes, setSizes] = useState(product?.sizes ?? []);
+  const [colors, setColors] = useState(product?.colors ?? []);
+  const [tags, setTags] = useState(product?.tags ?? []);
   const [error, setError] = useState<string | null>(null);
+  const [imagesUploading, setImagesUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (!open) return;
-    setName(product?.name ?? "");
-    setPrice(product ? String(product.price) : "");
-    setCategory(product?.category ?? "");
-    setImagesText(product ? imagesToText(product.images) : "");
-    setSizes(product?.sizes ?? []);
-    setColors(product?.colors ?? []);
-    setTags(product?.tags ?? []);
-    setError(null);
-  }, [open, product]);
+  const busy = isPending || imagesUploading;
 
   const categoryValue =
     category ||
@@ -75,7 +75,7 @@ export function ProductFormDialog({
     if (!open) return;
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !isPending) onClose();
+      if (event.key === "Escape" && !busy) onClose();
     }
 
     document.addEventListener("keydown", onKeyDown);
@@ -86,11 +86,16 @@ export function ProductFormDialog({
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, isPending, onClose]);
+  }, [open, busy, onClose]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+
+    if (imagesUploading) {
+      setError("Attendez la fin de l’envoi des images.");
+      return;
+    }
 
     const parsedPrice = Number.parseFloat(price);
     const input = {
@@ -131,7 +136,7 @@ export function ProductFormDialog({
       <div
         className="absolute inset-0 bg-black/30"
         onClick={() => {
-          if (!isPending) onClose();
+          if (!busy) onClose();
         }}
       />
 
@@ -139,7 +144,8 @@ export function ProductFormDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-form-title"
-        className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-surface shadow-xl"
+        aria-busy={imagesUploading}
+        className="relative z-10 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-surface shadow-xl"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface px-5 py-4">
           <h2
@@ -151,7 +157,7 @@ export function ProductFormDialog({
           <button
             type="button"
             onClick={onClose}
-            disabled={isPending}
+            disabled={busy}
             className="rounded-md p-1.5 text-muted transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
             aria-label="Fermer"
           >
@@ -169,7 +175,7 @@ export function ProductFormDialog({
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
-              disabled={isPending}
+              disabled={busy}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
               placeholder="Nom du produit"
             />
@@ -186,7 +192,7 @@ export function ProductFormDialog({
               value={price}
               onChange={(event) => setPrice(event.target.value)}
               required
-              disabled={isPending}
+              disabled={busy}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
               placeholder="0"
             />
@@ -212,7 +218,7 @@ export function ProductFormDialog({
                 value={categoryValue}
                 onChange={(event) => setCategory(event.target.value)}
                 required
-                disabled={isPending}
+                disabled={busy}
                 aria-labelledby="product-category-label"
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
               >
@@ -238,14 +244,14 @@ export function ProductFormDialog({
             values={sizes}
             onChange={setSizes}
             placeholder="ex. M, L, XL"
-            disabled={isPending}
+            disabled={busy}
           />
 
           <ColorInput
             label="Couleurs"
             values={colors}
             onChange={setColors}
-            disabled={isPending}
+            disabled={busy}
           />
 
           <TagInput
@@ -253,25 +259,15 @@ export function ProductFormDialog({
             values={tags}
             onChange={setTags}
             placeholder="ex. confort, sport, étanche"
-            disabled={isPending}
+            disabled={busy}
           />
 
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Images
-            </span>
-            <textarea
-              value={imagesText}
-              onChange={(event) => setImagesText(event.target.value)}
-              disabled={isPending}
-              rows={4}
-              className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              placeholder={"Une URL d’image par ligne"}
-            />
-            <span className="block text-xs text-muted">
-              Saisissez une URL d’image par ligne
-            </span>
-          </label>
+          <ProductImageField
+            value={imagesText}
+            onChange={setImagesText}
+            disabled={isPending}
+            onBusyChange={setImagesUploading}
+          />
 
           {error ? (
             <p className="text-sm text-red-700" role="alert">
@@ -283,23 +279,25 @@ export function ProductFormDialog({
             <button
               type="button"
               onClick={onClose}
-              disabled={isPending}
+              disabled={busy}
               className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:opacity-60"
             >
               Annuler
             </button>
             <button
               type="submit"
-              disabled={isPending}
+              disabled={busy}
               className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isPending
-                ? isEdit
-                  ? "Enregistrement…"
-                  : "Création…"
-                : isEdit
-                  ? "Enregistrer"
-                  : "Créer le produit"}
+              {imagesUploading
+                ? "Envoi des images…"
+                : isPending
+                  ? isEdit
+                    ? "Enregistrement…"
+                    : "Création…"
+                  : isEdit
+                    ? "Enregistrer"
+                    : "Créer le produit"}
             </button>
           </div>
         </form>

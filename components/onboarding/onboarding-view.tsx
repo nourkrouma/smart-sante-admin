@@ -109,6 +109,34 @@ export function OnboardingView() {
     );
   }
 
+  async function handleReorder(next: OnboardingQuestion[]) {
+    const previous = questions ?? [];
+    setQuestions(sortQuestions(next));
+    const changed = next.filter((question) => {
+      const before = previous.find((item) => item.id === question.id);
+      return before != null && before.order !== question.order;
+    });
+
+    try {
+      await Promise.all(
+        changed.map((question) =>
+          updateOnboardingQuestion(question.id, {
+            title: question.title,
+            type: question.type,
+            options: question.options,
+            order: question.order,
+            required: question.required,
+          }),
+        ),
+      );
+    } catch (reorderError) {
+      setQuestions(previous);
+      throw reorderError instanceof Error
+        ? reorderError
+        : new Error("Impossible de changer l’ordre");
+    }
+  }
+
   return (
     <>
       <div
@@ -161,6 +189,7 @@ export function OnboardingView() {
       ) : tab === "questions" ? (
         <QuestionsList
           questions={questions}
+          emptyLabel="Ces questions sont posées une seule fois, quand l’utilisateur crée son compte."
           onSubmit={(id, input) => {
             const payload = {
               title: input.title,
@@ -174,6 +203,7 @@ export function OnboardingView() {
               : createOnboardingQuestion(payload);
           }}
           onDelete={deleteOnboardingQuestion}
+          onReorder={handleReorder}
           onCreated={handleQuestionCreated}
           onUpdated={handleQuestionUpdated}
           onDeleted={handleQuestionDeleted}

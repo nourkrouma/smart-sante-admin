@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  ListChecks,
+  BarChart3,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
   Pencil,
   Plus,
   Trash2,
@@ -18,6 +21,7 @@ import {
   surveyScheduleLabel,
 } from "@/lib/popup-survey-input";
 import { getPopupSurveyStats } from "@/lib/popup-survey-stats";
+import { moveItem } from "@/lib/reorder";
 import {
   createPopupSurvey,
   deletePopupSurvey,
@@ -56,7 +60,11 @@ function questionCountLabel(count: number) {
   return `${count} question${count === 1 ? "" : "s"}`;
 }
 
-export function PopupSurveysView() {
+export function PopupSurveysView({
+  onDetailOpenChange,
+}: {
+  onDetailOpenChange?: (open: boolean) => void;
+}) {
   const [surveys, setSurveys] = useState<PopupSurvey[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -64,6 +72,7 @@ export function PopupSurveysView() {
   const [deleting, setDeleting] = useState<PopupSurvey | null>(null);
   const [openSurveyId, setOpenSurveyId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<SurveyDetailTab>("questions");
+  const [movingId, setMovingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,6 +100,12 @@ export function PopupSurveysView() {
     surveys && openSurveyId
       ? (surveys.find((survey) => survey.id === openSurveyId) ?? null)
       : null;
+
+  const detailOpen = openSurvey !== null;
+
+  useEffect(() => {
+    onDetailOpenChange?.(detailOpen);
+  }, [detailOpen, onDetailOpenChange]);
 
   const surveyStats = useMemo(
     () =>
@@ -123,6 +138,50 @@ export function PopupSurveysView() {
     );
   }
 
+  async function moveSurvey(index: number, direction: -1 | 1) {
+    if (!surveys || movingId) return;
+    const next = moveItem(surveys, index, direction);
+    if (!next) return;
+
+    const changed = next.filter((survey) => {
+      const before = surveys.find((item) => item.id === survey.id);
+      return before != null && before.order !== survey.order;
+    });
+
+    setSurveys(next);
+    setMovingId(changed[0]?.id ?? "moving");
+    setError(null);
+    try {
+      const saved = await Promise.all(
+        changed.map((survey) =>
+          updatePopupSurvey(survey.id, {
+            title: survey.title,
+            description: survey.description,
+            active: survey.active,
+            startsAt: survey.startsAt,
+            endsAt: survey.endsAt,
+            order: survey.order,
+            questions: survey.questions,
+          }),
+        ),
+      );
+      saved.forEach((survey) => rememberSurvey(survey));
+    } catch (moveError) {
+      setError(
+        moveError instanceof Error
+          ? moveError.message
+          : "Impossible de changer l’ordre",
+      );
+      try {
+        setSurveys(sortSurveys(await getPopupSurveys()));
+      } catch {
+        setSurveys(surveys);
+      }
+    } finally {
+      setMovingId(null);
+    }
+  }
+
   async function persistSurvey(
     survey: PopupSurvey,
     questions: PopupSurveyQuestion[],
@@ -136,6 +195,18 @@ export function PopupSurveysView() {
       order: survey.order,
       questions: sortSurveyQuestions(questions),
     });
+  }
+
+  function hideSurvey() {
+    setOpenSurveyId(null);
+    setDetailTab("questions");
+    onDetailOpenChange?.(false);
+  }
+
+  function showSurvey(id: string, tab: SurveyDetailTab) {
+    setDetailTab(tab);
+    setOpenSurveyId(id);
+    onDetailOpenChange?.(true);
   }
 
   if (surveys === null) {
@@ -157,10 +228,7 @@ export function PopupSurveysView() {
       <div>
         <button
           type="button"
-          onClick={() => {
-            setOpenSurveyId(null);
-            setDetailTab("questions");
-          }}
+          onClick={hideSurvey}
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
         >
           <ArrowLeft size={16} strokeWidth={2} />
@@ -180,9 +248,23 @@ export function PopupSurveysView() {
                 <p className="mt-1 text-sm text-muted">{openSurvey.description}</p>
               ) : null}
             </div>
-            <SurveyStatusBadge survey={openSurvey} />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(openSurvey);
+                  setFormOpen(true);
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+              >
+                <Pencil size={14} strokeWidth={1.75} />
+                Modifier
+              </button>
+              <SurveyStatusBadge survey={openSurvey} />
+            </div>
           </div>
           <p className="mt-3 text-xs text-muted">
+            {questionCountLabel(openSurvey.questions.length)} ·{" "}
             {surveyScheduleLabel(openSurvey)}
           </p>
         </div>
@@ -194,7 +276,10 @@ export function PopupSurveysView() {
         >
           {(
             [
-              { id: "questions", label: "Questions" },
+              {
+                id: "questions",
+                label: `Questions (${openSurvey.questions.length})`,
+              },
               { id: "stats", label: "Statistiques" },
             ] as const
           ).map((item) => {
@@ -228,7 +313,7 @@ export function PopupSurveysView() {
           <QuestionsList
             key={openSurvey.id}
             questions={openSurvey.questions}
-            emptyLabel="Ajoutez des questions à cette enquête. L’application les affichera ensemble."
+            emptyLabel="Ajoutez la première question. L’application les affichera dans cet ordre."
             deleteDescription={(question) => (
               <>
                 Cette question sera retirée de{" "}
@@ -270,16 +355,70 @@ export function PopupSurveysView() {
               );
               rememberSurvey(saved);
             }}
+            onReorder={async (next) => {
+              const snapshot = openSurvey;
+              rememberSurvey({ ...snapshot, questions: next });
+              try {
+                const saved = await persistSurvey(
+                  { ...snapshot, questions: next },
+                  next,
+                );
+                rememberSurvey(saved);
+              } catch (reorderError) {
+                rememberSurvey(snapshot);
+                throw reorderError;
+              }
+            }}
             onCreated={() => {}}
             onUpdated={() => {}}
             onDeleted={() => {}}
           />
         ) : (
-          <ResponseStats
-            stats={surveyStats ?? []}
-            emptyAnswersLabel="Aucune réponse agrégée pour cette enquête."
-          />
+          <>
+            {openSurvey.questions.length > 0 ? (
+              <p className="mb-4 text-sm text-muted">
+                Totaux envoyés par l’application. Les réponses écrites ne sont pas
+                listées une à une.
+              </p>
+            ) : null}
+            <ResponseStats
+              stats={surveyStats ?? []}
+              emptyAnswersLabel="Aucune réponse agrégée pour cette enquête."
+            />
+          </>
         )}
+
+        {formOpen ? (
+          <SurveyFormDialog
+            key={editing?.id ?? "new"}
+            open
+            survey={editing}
+            nextOrder={nextSurveyOrder(surveys)}
+            onClose={() => {
+              setFormOpen(false);
+              setEditing(null);
+            }}
+            onSubmit={(input) => {
+              const payload = {
+                title: input.title,
+                description: input.description,
+                active: input.active,
+                startsAt: input.startsAt,
+                endsAt: input.endsAt,
+                order: input.order,
+                questions: editing?.questions ?? [],
+              };
+              return editing
+                ? updatePopupSurvey(editing.id, payload)
+                : createPopupSurvey(payload);
+            }}
+            onSaved={(survey) => {
+              const created = editing === null;
+              rememberSurvey(survey);
+              if (created) showSurvey(survey.id, "questions");
+            }}
+          />
+        ) : null}
       </div>
     );
   }
@@ -318,77 +457,127 @@ export function PopupSurveysView() {
         </div>
       ) : (
         <ul className="space-y-3">
-          {surveys.map((survey) => (
-            <li
-              key={survey.id}
-              className="rounded-xl border border-border bg-surface p-5"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold text-foreground">
-                      {survey.title}
-                    </h2>
-                    <SurveyStatusBadge survey={survey} />
-                  </div>
-                  {survey.description ? (
-                    <p className="mt-1 line-clamp-2 text-sm text-muted">
-                      {survey.description}
-                    </p>
+          {surveys.map((survey, index) => {
+            const preview = sortSurveyQuestions(survey.questions).slice(0, 3);
+            return (
+              <li
+                key={survey.id}
+                className="rounded-xl border border-border bg-background p-4 sm:p-5"
+              >
+                <div className="flex gap-3">
+                  {surveys.length > 1 ? (
+                    <div className="flex flex-col items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => void moveSurvey(index, -1)}
+                        disabled={movingId !== null || index === 0}
+                        className="rounded-md p-1 text-muted transition-colors hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`Monter « ${survey.title} »`}
+                      >
+                        <ChevronUp size={16} strokeWidth={2} />
+                      </button>
+                      <span className="flex size-7 items-center justify-center rounded-full bg-surface text-xs font-semibold text-foreground tabular-nums ring-1 ring-border">
+                        {index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void moveSurvey(index, 1)}
+                        disabled={
+                          movingId !== null || index === surveys.length - 1
+                        }
+                        className="rounded-md p-1 text-muted transition-colors hover:bg-surface hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`Descendre « ${survey.title} »`}
+                      >
+                        <ChevronDown size={16} strokeWidth={2} />
+                      </button>
+                    </div>
                   ) : null}
-                  <p className="mt-2 text-xs text-muted">
-                    {questionCountLabel(survey.questions.length)} · ordre{" "}
-                    {survey.order}
-                    {" · "}
-                    {surveyScheduleLabel(survey)}
-                  </p>
-                </div>
-              </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDetailTab("questions");
-                    setOpenSurveyId(survey.id);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-black"
-                >
-                  <ListChecks size={14} strokeWidth={2} />
-                  Questions
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDetailTab("stats");
-                    setOpenSurveyId(survey.id);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                >
-                  Statistiques
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditing(survey);
-                    setFormOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                >
-                  <Pencil size={14} strokeWidth={1.75} />
-                  Modifier
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeleting(survey)}
-                  className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50"
-                >
-                  <Trash2 size={14} strokeWidth={1.75} />
-                  Supprimer
-                </button>
-              </div>
-            </li>
-          ))}
+                  <div className="min-w-0 flex-1">
+                    <button
+                      type="button"
+                      onClick={() => showSurvey(survey.id, "questions")}
+                      className="w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-brand/30"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-base font-semibold text-foreground">
+                          {survey.title}
+                        </h2>
+                        <SurveyStatusBadge survey={survey} />
+                      </div>
+                      {survey.description ? (
+                        <p className="mt-1 line-clamp-2 text-sm text-muted">
+                          {survey.description}
+                        </p>
+                      ) : null}
+                      <p className="mt-2 text-xs text-muted">
+                        {questionCountLabel(survey.questions.length)} ·{" "}
+                        {surveyScheduleLabel(survey)}
+                      </p>
+                      {preview.length > 0 ? (
+                        <ol className="mt-3 space-y-1">
+                          {preview.map((question, questionIndex) => (
+                            <li
+                              key={question.id}
+                              className="truncate text-sm text-muted"
+                            >
+                              <span className="mr-2 text-xs tabular-nums">
+                                {questionIndex + 1}.
+                              </span>
+                              {question.title}
+                            </li>
+                          ))}
+                          {survey.questions.length > preview.length ? (
+                            <li className="text-xs text-muted">
+                              + {survey.questions.length - preview.length} autres
+                            </li>
+                          ) : null}
+                        </ol>
+                      ) : (
+                        <p className="mt-3 text-sm text-muted">
+                          Aucune question pour le moment.
+                        </p>
+                      )}
+                      <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand">
+                        Gérer les questions
+                        <ChevronRight size={16} strokeWidth={2} />
+                      </span>
+                    </button>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => showSurvey(survey.id, "stats")}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                      >
+                        <BarChart3 size={14} strokeWidth={2} />
+                        Statistiques
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(survey);
+                          setFormOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                      >
+                        <Pencil size={14} strokeWidth={1.75} />
+                        Modifier
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleting(survey)}
+                        className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-red-700 transition-colors hover:bg-red-50"
+                      >
+                        <Trash2 size={14} strokeWidth={1.75} />
+                        Supprimer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -416,7 +605,11 @@ export function PopupSurveysView() {
             ? updatePopupSurvey(editing.id, payload)
             : createPopupSurvey(payload);
         }}
-        onSaved={rememberSurvey}
+        onSaved={(survey) => {
+          const created = editing === null;
+          rememberSurvey(survey);
+          if (created) showSurvey(survey.id, "questions");
+        }}
       />
       ) : null}
 

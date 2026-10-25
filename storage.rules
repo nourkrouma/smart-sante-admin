@@ -6,7 +6,7 @@ service firebase.storage {
       return request.auth != null && request.auth.token.admin == true;
     }
 
-    function isNotificationImage() {
+    function isHostedImage() {
       return request.resource.size > 0
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
@@ -17,7 +17,14 @@ service firebase.storage {
       allow get: if true;
       // Admins browse existing files. Listing stays on this prefix only.
       allow list: if isAdmin();
-      allow create: if isAdmin() && isNotificationImage();
+      allow create: if isAdmin() && isHostedImage();
+      allow delete: if isAdmin();
+    }
+
+    match /products/{imageId} {
+      // The storefront and this admin load the download URL without an auth token.
+      allow get: if true;
+      allow create: if isAdmin() && isHostedImage();
       allow delete: if isAdmin();
     }
   }

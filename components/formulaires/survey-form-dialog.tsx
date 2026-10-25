@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { X } from "lucide-react";
+import { SwitchRow } from "@/components/ui/switch-row";
 import {
   datetimeLocalToIso,
   toDatetimeLocalInput,
@@ -124,15 +125,22 @@ export function SurveyFormDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="survey-form-title"
-        className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-surface shadow-xl"
+        className="relative z-10 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-surface shadow-xl"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface px-5 py-4">
-          <h2
-            id="survey-form-title"
-            className="text-base font-semibold text-foreground"
-          >
-            {isEdit ? "Modifier l’enquête" : "Nouvelle enquête pop-up"}
-          </h2>
+          <div>
+            <h2
+              id="survey-form-title"
+              className="text-base font-semibold text-foreground"
+            >
+              {isEdit ? "Modifier l’enquête" : "Nouvelle enquête pop-up"}
+            </h2>
+            <p className="mt-0.5 text-xs text-muted">
+              {isEdit
+                ? "Le titre, la période et l’activation. Les questions se gèrent ensuite."
+                : "Ensuite, vous ajouterez les questions une par une."}
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -144,102 +152,109 @@ export function SurveyFormDialog({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 px-5 py-5">
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Titre
-            </span>
-            <input
-              type="text"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              required
-              maxLength={200}
-              disabled={isPending}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              placeholder="Ex. Satisfaction de la semaine"
-            />
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Description (optionnel)
-            </span>
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              maxLength={1000}
-              rows={3}
-              disabled={isPending}
-              className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              placeholder="Texte d’introduction affiché avec l’enquête"
-            />
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Ordre
-            </span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={order}
-              onChange={(event) => setOrder(event.target.value)}
-              required
-              disabled={isPending}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-            />
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Mise en ligne
-            </span>
-            <input
-              type="datetime-local"
-              value={startsAt}
-              onChange={(event) => setStartsAt(event.target.value)}
-              disabled={isPending}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-            />
-            <span className="block text-xs text-muted">
-              Laissez vide pour une mise en ligne immédiate.
-            </span>
-          </label>
-
-          <label className="block space-y-1.5">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted">
-              Fin (optionnel)
-            </span>
-            <input
-              type="datetime-local"
-              value={endsAt}
-              onChange={(event) => setEndsAt(event.target.value)}
-              disabled={isPending}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-            />
-            <span className="block text-xs text-muted">
-              Laissez vide pour la laisser en ligne jusqu’à désactivation.
-            </span>
-          </label>
-
-          <label className="flex items-start gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
-              checked={active}
-              onChange={(event) => setActive(event.target.checked)}
-              disabled={isPending}
-              className="mt-0.5 size-4 rounded border-border text-brand accent-brand"
-            />
-            <span>
-              Enquête active
-              <span className="mt-0.5 block text-xs text-muted">
-                Une enquête inactive ne s’affiche pas, même si la date de mise
-                en ligne est atteinte.
+        <form onSubmit={handleSubmit} className="space-y-5 px-5 py-5">
+          <div className="space-y-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">
+              Contenu
+            </p>
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                Titre
               </span>
-            </span>
-          </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                required
+                autoFocus
+                maxLength={200}
+                disabled={isPending}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+                placeholder="Ex. Satisfaction de la semaine"
+              />
+            </label>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                Introduction (optionnel)
+              </span>
+              <textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={1000}
+                rows={3}
+                disabled={isPending}
+                className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+                placeholder="Texte affiché avec l’enquête"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-4 border-t border-border pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted">
+              Diffusion
+            </p>
+            <SwitchRow
+              checked={active}
+              onChange={setActive}
+              disabled={isPending}
+              title="Enquête active"
+              description="Une enquête inactive ne s’affiche pas, même si la date de mise en ligne est atteinte."
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                  Début
+                </span>
+                <input
+                  type="datetime-local"
+                  value={startsAt}
+                  onChange={(event) => setStartsAt(event.target.value)}
+                  disabled={isPending}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+                />
+                <span className="block text-xs text-muted">
+                  Vide = mise en ligne immédiate.
+                </span>
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                  Fin (optionnel)
+                </span>
+                <input
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(event) => setEndsAt(event.target.value)}
+                  disabled={isPending}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+                />
+                <span className="block text-xs text-muted">
+                  Vide = jusqu’à désactivation.
+                </span>
+              </label>
+            </div>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted">
+                Position
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={order}
+                onChange={(event) => setOrder(event.target.value)}
+                required
+                disabled={isPending}
+                className="w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+              />
+              <span className="block text-xs text-muted">
+                1 s’affiche en premier. Les flèches de la liste font la même chose.
+              </span>
+            </label>
+          </div>
 
           {error ? (
             <p className="text-sm text-red-700" role="alert">

@@ -38,7 +38,9 @@ export function FormulairesView() {
     onboarding: true,
     popup: false,
   });
+  const [popupDetail, setPopupDetail] = useState(false);
   const current = KINDS.find((item) => item.id === kind) ?? KINDS[0];
+  const focusedSurvey = kind === "popup" && popupDetail;
 
   function selectKind(next: FormKind) {
     setKind(next);
@@ -53,7 +55,7 @@ export function FormulairesView() {
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Formulaires
         </h1>
-        <p className="mt-1 text-sm text-muted">
+        <p className={`mt-1 text-sm text-muted ${focusedSurvey ? "hidden" : ""}`}>
           Deux types distincts : l’onboarding à l’inscription, et les enquêtes
           pop-up pendant l’usage de l’app.
         </p>
@@ -62,7 +64,7 @@ export function FormulairesView() {
       <div
         role="tablist"
         aria-label="Types de formulaires"
-        className="mb-8 grid gap-3 sm:grid-cols-2"
+        className={`mb-8 grid gap-3 sm:grid-cols-2 ${focusedSurvey ? "hidden" : ""}`}
       >
         {KINDS.map((item) => {
           const selected = kind === item.id;
@@ -108,20 +110,9 @@ export function FormulairesView() {
       </div>
 
       <section
-        aria-labelledby="formulaires-section-title"
+        aria-label={current.label}
         className="rounded-xl border border-border bg-surface p-5 sm:p-6"
       >
-        <div className="mb-6 border-b border-border pb-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">
-            {current.when}
-          </p>
-          <h2
-            id="formulaires-section-title"
-            className="mt-1 text-lg font-semibold text-foreground"
-          >
-            {current.label}
-          </h2>
-        </div>
         {visited.onboarding ? (
           <div className={kind === "onboarding" ? undefined : "hidden"}>
             <OnboardingView />
@@ -129,7 +120,7 @@ export function FormulairesView() {
         ) : null}
         {visited.popup ? (
           <div className={kind === "popup" ? undefined : "hidden"}>
-            <PopupSurveysView />
+            <PopupSurveysView onDetailOpenChange={setPopupDetail} />
           </div>
         ) : null}
       </section>
