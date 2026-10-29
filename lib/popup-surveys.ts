@@ -118,7 +118,8 @@ function mapFirestoreSurvey(
     id: parseString(data.id) || id,
     title: parseString(data.title),
     description: parseString(data.description),
-    active: data.active !== false,
+    // Missing/legacy field = draft (published only when explicitly true).
+    active: data.active === true,
     startsAt: parseTimestamp(data.startsAt),
     endsAt: parseTimestamp(data.endsAt),
     order: parseNumber(data.order),

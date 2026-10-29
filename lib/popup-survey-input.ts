@@ -70,21 +70,22 @@ export function surveyAvailability(
 }
 
 export const SURVEY_AVAILABILITY_LABELS: Record<SurveyAvailability, string> = {
-  inactive: "Inactive",
+  inactive: "Brouillon",
   scheduled: "Programmée",
-  live: "En ligne",
+  live: "Publiée",
   ended: "Terminée",
 };
 
 export function surveyScheduleLabel(
-  survey: Pick<PopupSurveyInput, "startsAt" | "endsAt">,
+  survey: Pick<PopupSurveyInput, "active" | "startsAt" | "endsAt">,
 ): string {
+  if (!survey.active) return "Non publiée";
   const start = survey.startsAt ? SURVEY_DATE_FORMAT.format(new Date(survey.startsAt)) : null;
   const end = survey.endsAt ? SURVEY_DATE_FORMAT.format(new Date(survey.endsAt)) : null;
   if (start && end) return `Du ${start} au ${end}`;
-  if (start) return `Mise en ligne le ${start}`;
+  if (start) return `À partir du ${start}`;
   if (end) return `Jusqu’au ${end}`;
-  return "Mise en ligne immédiate";
+  return "Visible dès maintenant";
 }
 
 export function sortSurveyQuestions(
@@ -196,10 +197,12 @@ export function normalizeSurveyInput(input: PopupSurveyInput): PopupSurveyInput 
     ids.add(question.id);
   }
 
+  const active = Boolean(input.active) && questions.length > 0;
+
   return {
     title,
     description,
-    active: Boolean(input.active),
+    active,
     startsAt,
     endsAt,
     order: Math.trunc(input.order),

@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition, type FormEvent } from "react";
-import { X } from "lucide-react";
-import { SwitchRow } from "@/components/ui/switch-row";
+import {
+  useEffect,
+  useId,
+  useState,
+  useTransition,
+  type FormEvent,
+} from "react";
+import { ChevronDown, X } from "lucide-react";
 import {
   datetimeLocalToIso,
   toDatetimeLocalInput,
@@ -27,6 +32,9 @@ type SurveyFormDialogProps = {
   onSaved: (survey: PopupSurvey) => void;
 };
 
+const fieldClassName =
+  "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none ring-brand/30 placeholder:text-muted/70 focus:ring-2 disabled:opacity-60";
+
 export function SurveyFormDialog({
   open,
   survey,
@@ -36,22 +44,67 @@ export function SurveyFormDialog({
   onSaved,
 }: SurveyFormDialogProps) {
   const isEdit = survey !== null;
-  const [title, setTitle] = useState(survey?.title ?? "");
-  const [description, setDescription] = useState(survey?.description ?? "");
-  const [order, setOrder] = useState(String(survey?.order ?? nextOrder));
-  const [startsAt, setStartsAt] = useState(
-    toDatetimeLocalInput(survey?.startsAt ?? null),
-  );
-  const [endsAt, setEndsAt] = useState(toDatetimeLocalInput(survey?.endsAt ?? null));
-  const [active, setActive] = useState(survey?.active ?? true);
+  const titleId = useId();
+  const descriptionId = useId();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const trimmedTitle = title.trim();
+  const canSubmit = trimmedTitle.length > 0 && !isPending;
+  const dirty = isEdit
+    ? title !== (survey?.title ?? "") ||
+      description !== (survey?.description ?? "") ||
+      startsAt !== toDatetimeLocalInput(survey?.startsAt ?? null) ||
+      endsAt !== toDatetimeLocalInput(survey?.endsAt ?? null)
+    : trimmedTitle.length > 0 ||
+      description.trim().length > 0 ||
+      startsAt.length > 0 ||
+      endsAt.length > 0;
+
+  useEffect(() => {
+    if (!open) return;
+    setTitle(survey?.title ?? "");
+    setDescription(survey?.description ?? "");
+    setStartsAt(toDatetimeLocalInput(survey?.startsAt ?? null));
+    setEndsAt(toDatetimeLocalInput(survey?.endsAt ?? null));
+    setScheduleOpen(
+      Boolean(survey?.startsAt || survey?.endsAt) || survey !== null,
+    );
+    setError(null);
+  }, [open, survey]);
+
+  function requestClose() {
+    if (isPending) return;
+    if (
+      dirty &&
+      !window.confirm(
+        "Fermer sans enregistrer ? Les modifications seront perdues.",
+      )
+    ) {
+      return;
+    }
+    onClose();
+  }
 
   useEffect(() => {
     if (!open) return;
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !isPending) onClose();
+      if (event.key !== "Escape" || isPending) return;
+      if (
+        dirty &&
+        !window.confirm(
+          "Fermer sans enregistrer ? Les modifications seront perdues.",
+        )
+      ) {
+        return;
+      }
+      onClose();
     }
 
     document.addEventListener("keydown", onKeyDown);
@@ -62,21 +115,29 @@ export function SurveyFormDialog({
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, isPending, onClose]);
+  }, [open, isPending, dirty, onClose]);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!canSubmit) return;
     setError(null);
 
-    const parsedOrder = Number.parseInt(order, 10);
     let startsAtIso: string | null;
     let endsAtIso: string | null;
     try {
       startsAtIso = datetimeLocalToIso(
         startsAt,
-        "La date de mise en ligne est invalide",
+        "La date de début est invalide",
       );
       endsAtIso = datetimeLocalToIso(endsAt, "La date de fin est invalide");
+      if (
+        startsAtIso &&
+        endsAtIso &&
+        new Date(endsAtIso) <= new Date(startsAtIso)
+      ) {
+        setError("La fin doit être postérieure au début");
+        return;
+      }
     } catch (validationError) {
       setError(
         validationError instanceof Error
@@ -89,10 +150,11 @@ export function SurveyFormDialog({
     startTransition(async () => {
       try {
         const saved = await onSubmit({
-          title,
-          description,
-          order: Number.isFinite(parsedOrder) ? parsedOrder : Number.NaN,
-          active,
+          title: trimmedTitle,
+          description: description.trim(),
+          order: survey?.order ?? nextOrder,
+          // Publish is controlled on the survey detail screen only.
+          active: survey?.active ?? false,
           startsAt: startsAtIso,
           endsAt: endsAtIso,
         });
@@ -113,37 +175,35 @@ export function SurveyFormDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-4">
       <div
         className="absolute inset-0 bg-black/30"
-        onClick={() => {
-          if (!isPending) onClose();
-        }}
+        onClick={requestClose}
       />
 
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="survey-form-title"
-        className="relative z-10 max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-surface shadow-xl"
+        className="relative z-10 flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-border bg-surface shadow-xl sm:rounded-xl"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface px-5 py-4">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
+          <div className="min-w-0">
             <h2
               id="survey-form-title"
               className="text-base font-semibold text-foreground"
             >
-              {isEdit ? "Modifier l’enquête" : "Nouvelle enquête pop-up"}
+              {isEdit ? "Modifier l’enquête" : "Nouvelle enquête"}
             </h2>
-            <p className="mt-0.5 text-xs text-muted">
+            <p className="mt-0.5 text-sm text-muted">
               {isEdit
-                ? "Le titre, la période et l’activation. Les questions se gèrent ensuite."
-                : "Ensuite, vous ajouterez les questions une par une."}
+                ? "Titre, introduction et planning."
+                : "Un titre suffit pour commencer."}
             </p>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={isPending}
             className="rounded-md p-1.5 text-muted transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
             aria-label="Fermer"
@@ -152,16 +212,17 @@ export function SurveyFormDialog({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5 px-5 py-5">
-          <div className="space-y-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">
-              Contenu
-            </p>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted">
+        <form
+          onSubmit={handleSubmit}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="space-y-4 overflow-y-auto px-5 py-5">
+            <label className="block space-y-1.5" htmlFor={titleId}>
+              <span className="text-sm font-medium text-foreground">
                 Titre
               </span>
               <input
+                id={titleId}
                 type="text"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
@@ -169,112 +230,123 @@ export function SurveyFormDialog({
                 autoFocus
                 maxLength={200}
                 disabled={isPending}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
+                className={fieldClassName}
                 placeholder="Ex. Satisfaction de la semaine"
               />
             </label>
 
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                Introduction (optionnel)
+            <label className="block space-y-1.5" htmlFor={descriptionId}>
+              <span className="text-sm font-medium text-foreground">
+                Introduction
+                <span className="ml-1 font-normal text-muted">· optionnel</span>
               </span>
               <textarea
+                id={descriptionId}
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 maxLength={1000}
-                rows={3}
+                rows={isEdit ? 3 : 2}
                 disabled={isPending}
-                className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-                placeholder="Texte affiché avec l’enquête"
+                className={`${fieldClassName} resize-none`}
+                placeholder="Court texte affiché avant les questions"
               />
             </label>
+
+            {isEdit ? (
+              <div className="space-y-3 border-t border-border pt-4">
+                <p className="text-sm font-medium text-foreground">Planning</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs text-muted">Début</span>
+                    <input
+                      type="datetime-local"
+                      value={startsAt}
+                      onChange={(event) => setStartsAt(event.target.value)}
+                      disabled={isPending}
+                      className={fieldClassName}
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs text-muted">Fin</span>
+                    <input
+                      type="datetime-local"
+                      value={endsAt}
+                      onChange={(event) => setEndsAt(event.target.value)}
+                      disabled={isPending}
+                      className={fieldClassName}
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-muted">
+                  Laissez vide pour une diffusion immédiate, sans date de fin.
+                  La publication se gère sur l’écran de l’enquête.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <button
+                  type="button"
+                  onClick={() => setScheduleOpen((current) => !current)}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-background"
+                  aria-expanded={scheduleOpen}
+                >
+                  <span>
+                    <span className="font-medium">Planning</span>
+                    <span className="ml-1.5 text-muted">optionnel</span>
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    strokeWidth={2}
+                    className={`shrink-0 text-muted transition-transform ${
+                      scheduleOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {scheduleOpen ? (
+                  <div className="space-y-3 border-t border-border px-3 py-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block space-y-1.5">
+                        <span className="text-xs text-muted">Début</span>
+                        <input
+                          type="datetime-local"
+                          value={startsAt}
+                          onChange={(event) => setStartsAt(event.target.value)}
+                          disabled={isPending}
+                          className={fieldClassName}
+                        />
+                      </label>
+                      <label className="block space-y-1.5">
+                        <span className="text-xs text-muted">Fin</span>
+                        <input
+                          type="datetime-local"
+                          value={endsAt}
+                          onChange={(event) => setEndsAt(event.target.value)}
+                          disabled={isPending}
+                          className={fieldClassName}
+                        />
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted">
+                      Utile seulement si vous voulez une fenêtre précise. Vous
+                      pourrez aussi la définir plus tard.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {error ? (
+              <p className="text-sm text-red-700" role="alert">
+                {error}
+              </p>
+            ) : null}
           </div>
 
-          <div className="space-y-4 border-t border-border pt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">
-              Diffusion
-            </p>
-            <SwitchRow
-              checked={active}
-              onChange={setActive}
-              disabled={isPending}
-              title="Enquête active"
-              description="Une enquête inactive ne s’affiche pas, même si la date de mise en ligne est atteinte."
-            />
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Début
-                </span>
-                <input
-                  type="datetime-local"
-                  value={startsAt}
-                  onChange={(event) => setStartsAt(event.target.value)}
-                  disabled={isPending}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-                />
-                <span className="block text-xs text-muted">
-                  Vide = mise en ligne immédiate.
-                </span>
-              </label>
-
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                  Fin (optionnel)
-                </span>
-                <input
-                  type="datetime-local"
-                  value={endsAt}
-                  onChange={(event) => setEndsAt(event.target.value)}
-                  disabled={isPending}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-                />
-                <span className="block text-xs text-muted">
-                  Vide = jusqu’à désactivation.
-                </span>
-              </label>
-            </div>
-
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                Position
-              </span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={order}
-                onChange={(event) => setOrder(event.target.value)}
-                required
-                disabled={isPending}
-                className="w-28 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none ring-brand/30 focus:ring-2 disabled:opacity-60"
-              />
-              <span className="block text-xs text-muted">
-                1 s’affiche en premier. Les flèches de la liste font la même chose.
-              </span>
-            </label>
-          </div>
-
-          {error ? (
-            <p className="text-sm text-red-700" role="alert">
-              {error}
-            </p>
-          ) : null}
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:opacity-60"
-            >
-              Annuler
-            </button>
+          <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface px-5 py-4 sm:flex-row-reverse sm:items-center">
             <button
               type="submit"
-              disabled={isPending}
-              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!canSubmit}
+              className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isPending
                 ? isEdit
@@ -282,7 +354,15 @@ export function SurveyFormDialog({
                   : "Création…"
                 : isEdit
                   ? "Enregistrer"
-                  : "Créer l’enquête"}
+                  : "Créer et ajouter des questions"}
+            </button>
+            <button
+              type="button"
+              onClick={requestClose}
+              disabled={isPending}
+              className="rounded-lg px-4 py-2.5 text-sm font-medium text-muted transition-colors hover:bg-background hover:text-foreground disabled:opacity-60 sm:mr-auto"
+            >
+              Annuler
             </button>
           </div>
         </form>

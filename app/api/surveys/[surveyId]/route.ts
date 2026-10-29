@@ -5,6 +5,7 @@ import {
   POPUP_SURVEYS_COLLECTION,
 } from "@/lib/popup-survey-input";
 import { surveyDocumentFields } from "@/lib/popup-survey-write";
+import type { PopupSurveyStats } from "@/types/popup-survey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,44 @@ type RouteContext = {
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ message }, { status });
+}
+
+function timestampToIso(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof (value as { toDate: unknown }).toDate === "function"
+  ) {
+    const date = (value as { toDate: () => Date }).toDate();
+    if (date instanceof Date && !Number.isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+  if (typeof value === "string") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  return null;
+}
+
+function readPreservedMeta(data: Record<string, unknown> | undefined) {
+  const stats =
+    data?.stats &&
+    typeof data.stats === "object" &&
+    !Array.isArray(data.stats)
+      ? (data.stats as PopupSurveyStats)
+      : null;
+
+  return {
+    stats,
+    statsUpdatedAt: timestampToIso(data?.statsUpdatedAt),
+    createdAt: timestampToIso(data?.createdAt),
+  };
 }
 
 export async function PUT(request: Request, context: RouteContext) {
@@ -62,19 +101,37 @@ export async function PUT(request: Request, context: RouteContext) {
     }
 
     const now = new Date().toISOString();
+    const ref = getAdminDb().collection(POPUP_SURVEYS_COLLECTION).doc(surveyId);
 
     try {
-      await getAdminDb()
-        .collection(POPUP_SURVEYS_COLLECTION)
-        .doc(surveyId)
-        .set(
-          {
-            id: surveyId,
-            ...surveyDocumentFields(normalized),
-            updatedAt: FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
+      const existing = await ref.get();
+      if (!existing.exists) {
+        return jsonError("Enquête introuvable", 404);
+      }
+
+      const preserved = readPreservedMeta(
+        existing.data() as Record<string, unknown> | undefined,
+      );
+
+      await ref.set(
+        {
+          id: surveyId,
+          ...surveyDocumentFields(normalized),
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      return NextResponse.json({
+        survey: {
+          id: surveyId,
+          ...normalized,
+          stats: preserved.stats,
+          statsUpdatedAt: preserved.statsUpdatedAt,
+          createdAt: preserved.createdAt,
+          updatedAt: now,
+        },
+      });
     } catch (error) {
       return jsonError(
         error instanceof Error
@@ -83,17 +140,6 @@ export async function PUT(request: Request, context: RouteContext) {
         500,
       );
     }
-
-    return NextResponse.json({
-      survey: {
-        id: surveyId,
-        ...normalized,
-        stats: null,
-        statsUpdatedAt: null,
-        createdAt: null,
-        updatedAt: now,
-      },
-    });
   } catch (error) {
     console.error("[surveys/PUT]", error);
     return jsonError(

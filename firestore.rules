@@ -75,15 +75,21 @@ service cloud.firestore {
     }
 
     function isValidPopupSurveyQuestion(question) {
-      return question.id is string
+      return question.keys().hasAll([
+          'id', 'title', 'type', 'order', 'required', 'options'
+        ])
+        && question.id is string
         && question.id.size() > 0
+        && question.id.size() <= 80
         && question.title is string
         && question.title.size() > 0
+        && question.title.size() <= 500
         && question.type in ['single', 'multiple', 'text']
         && question.order is number
         && question.order >= 0
         && question.required is bool
         && question.options is list
+        && question.options.size() <= 30
         && (
           (question.type == 'text' && question.options.size() == 0)
           || (
@@ -91,6 +97,56 @@ service cloud.firestore {
             && question.options.size() >= 2
           )
         );
+    }
+
+    // No recursion in rules — skip past the list length, else validate index.
+    function popupSurveyQuestionAt(questions, index) {
+      return questions.size() <= index
+        || isValidPopupSurveyQuestion(questions[index]);
+    }
+
+    // Unrolled for MAX_SURVEY_QUESTIONS (40).
+    function arePopupSurveyQuestionsValid(questions) {
+      return popupSurveyQuestionAt(questions, 0)
+        && popupSurveyQuestionAt(questions, 1)
+        && popupSurveyQuestionAt(questions, 2)
+        && popupSurveyQuestionAt(questions, 3)
+        && popupSurveyQuestionAt(questions, 4)
+        && popupSurveyQuestionAt(questions, 5)
+        && popupSurveyQuestionAt(questions, 6)
+        && popupSurveyQuestionAt(questions, 7)
+        && popupSurveyQuestionAt(questions, 8)
+        && popupSurveyQuestionAt(questions, 9)
+        && popupSurveyQuestionAt(questions, 10)
+        && popupSurveyQuestionAt(questions, 11)
+        && popupSurveyQuestionAt(questions, 12)
+        && popupSurveyQuestionAt(questions, 13)
+        && popupSurveyQuestionAt(questions, 14)
+        && popupSurveyQuestionAt(questions, 15)
+        && popupSurveyQuestionAt(questions, 16)
+        && popupSurveyQuestionAt(questions, 17)
+        && popupSurveyQuestionAt(questions, 18)
+        && popupSurveyQuestionAt(questions, 19)
+        && popupSurveyQuestionAt(questions, 20)
+        && popupSurveyQuestionAt(questions, 21)
+        && popupSurveyQuestionAt(questions, 22)
+        && popupSurveyQuestionAt(questions, 23)
+        && popupSurveyQuestionAt(questions, 24)
+        && popupSurveyQuestionAt(questions, 25)
+        && popupSurveyQuestionAt(questions, 26)
+        && popupSurveyQuestionAt(questions, 27)
+        && popupSurveyQuestionAt(questions, 28)
+        && popupSurveyQuestionAt(questions, 29)
+        && popupSurveyQuestionAt(questions, 30)
+        && popupSurveyQuestionAt(questions, 31)
+        && popupSurveyQuestionAt(questions, 32)
+        && popupSurveyQuestionAt(questions, 33)
+        && popupSurveyQuestionAt(questions, 34)
+        && popupSurveyQuestionAt(questions, 35)
+        && popupSurveyQuestionAt(questions, 36)
+        && popupSurveyQuestionAt(questions, 37)
+        && popupSurveyQuestionAt(questions, 38)
+        && popupSurveyQuestionAt(questions, 39);
     }
 
     function isValidPopupSurvey() {
@@ -114,7 +170,9 @@ service cloud.firestore {
         )
         && data.questions is list
         && data.questions.size() <= 40
-        && (data.questions.size() == 0 || isValidPopupSurveyQuestion(data.questions[0]));
+        // Empty surveys cannot be published.
+        && (data.active == false || data.questions.size() > 0)
+        && arePopupSurveyQuestionsValid(data.questions);
     }
 
     function isValidPopupSurveyCompletion(completionId) {
@@ -127,10 +185,17 @@ service cloud.firestore {
         && data.keys().hasOnly(['uid', 'surveyId', 'answeredAt']);
     }
 
+    function isValidPopupSurveyStatsMap(stats) {
+      return stats is map
+        && stats.size() <= 40;
+    }
+
     // Clients may only bump anonymous aggregates on a survey.
     function isPopupSurveyStatsOnlyUpdate() {
       return request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['stats', 'statsUpdatedAt']);
+          .hasOnly(['stats', 'statsUpdatedAt'])
+        && request.resource.data.statsUpdatedAt == request.time
+        && isValidPopupSurveyStatsMap(request.resource.data.stats);
     }
 
     function authEmail() {
